@@ -308,6 +308,7 @@ class StatsDataReader(_eStatReader):
     def __init__(
         self,
         api_key,
+        header="name",
         explanationGetFlg=None,
         retry_count=3,
         pause=0.1,
@@ -366,6 +367,7 @@ class StatsDataReader(_eStatReader):
             )
 
         self.api_key = api_key
+        self.header = header
         self.statsDataId = statsDataId
         self.lvTab = lvTab
         self.cdTab = cdTab
@@ -500,8 +502,8 @@ class StatsDataReader(_eStatReader):
                 dfs = []
                 for u in data["unit"].unique():
                     df = data[data["unit"]==u]
-                    df = df.drop(dims + ["表章項目_unit"] + [c for c in df.columns if "level" in c], axis=1)
-                    df = df.set_index([c for c in df.columns if "name" in c]).unstack("表章項目_name")
+                    df = df.drop(dims + [c for c in df.columns if (("unit" in c) | ("level" in c))], axis=1)
+                    df = df.set_index([c for c in df.columns if "name" in c]).unstack(self.cols_name)
                     df.columns = [l2 for l1, l2 in df.columns]
                     df = df.reset_index()
                     df.columns = list(map(lambda x: x.rstrip("_name"), df.columns.values.tolist()))
@@ -593,7 +595,12 @@ class StatsDataReader(_eStatReader):
                 else:
                     continue
                 CLASS = CLASS.set_index("@code")
-                CLASS.columns = list(map(lambda x: co["@name"] + "_" + x.lstrip("@"), CLASS.columns.values.tolist()))
+                if self.header == "code":
+                    CLASS.columns = list(map(lambda x: co["@id"] + "_" + x.lstrip("@"), CLASS.columns.values.tolist()))
+                    self.cols_name = "tab_name"
+                else:
+                    CLASS.columns = list(map(lambda x: co["@name"] + "_" + x.lstrip("@"), CLASS.columns.values.tolist()))
+                    self.cols_name = "表章項目_name"
                 VALUE = VALUE.merge(CLASS, left_on=co["@id"], right_index=True, how="left")
         else:
             print("CLASS_OBJはlist型ではありません。")
