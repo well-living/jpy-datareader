@@ -40,7 +40,7 @@ class _eStatReader(_BaseReader):
         explanationGetFlg=None,
     ):
 
-        super(_eStatReader, self).__init__(
+        super().__init__(
             retry_count=retry_count,
             pause=pause,
             timeout=timeout,
@@ -107,7 +107,7 @@ class StatsListReader(_eStatReader):
         updatedDate=None, 
     ):
 
-        super(StatsListReader, self).__init__(
+        super().__init__(
             api_key=api_key,
             explanationGetFlg=explanationGetFlg,
             retry_count=retry_count,
@@ -224,7 +224,7 @@ class MetaInfoReader(_eStatReader):
         statsDataId="",
     ):
 
-        super(MetaInfoReader, self).__init__(
+        super().__init__(
             api_key=api_key,
             explanationGetFlg=explanationGetFlg,
             retry_count=retry_count,
@@ -348,7 +348,7 @@ class StatsDataReader(_eStatReader):
         na_values=np.nan,
     ):
 
-        super(StatsDataReader, self).__init__(
+        super().__init__(
             api_key=api_key,
             explanationGetFlg=explanationGetFlg,
             retry_count=retry_count,
@@ -616,7 +616,7 @@ class StatsDataReader(_eStatReader):
             
         VALUE.rename(columns={"$": "value"}, inplace=True)
             
-        if isinstance(type(self.TABLE_INF["TITLE"]), dict):
+        if isinstance(self.TABLE_INF["TITLE"], dict):
             self.TITLE = self.TABLE_INF["TITLE"]["$"]
         else:
             self.TITLE = self.TABLE_INF["TITLE"]
@@ -653,7 +653,7 @@ class DataCatalogReader(_eStatReader):
         updatedDate=None, 
     ):
 
-        super(DataCatalogReader, self).__init__(
+        super().__init__(
             api_key=api_key,
             explanationGetFlg=explanationGetFlg,
             retry_count=retry_count,
