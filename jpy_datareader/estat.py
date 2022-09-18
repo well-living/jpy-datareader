@@ -277,17 +277,60 @@ class MetaInfoReader(_eStatReader):
         """read one data from specified URL"""
         out = self._get_response(url, params=params).json()
 
-        self.STATUS = out["GET_META_INFO"]["RESULT"]["STATUS"]
-        self.ERROR_MSG = out["GET_META_INFO"]["RESULT"]["ERROR_MSG"]
-        self.DATE = out["GET_META_INFO"]["RESULT"]["DATE"]
-        self.LANG = out["GET_META_INFO"]["PARAMETER"]["LANG"]
-        self.DATA_FORMAT = out["GET_META_INFO"]["PARAMETER"]["DATA_FORMAT"]
-        self.TABLE_INF = out["GET_META_INFO"]["METADATA_INF"]["TABLE_INF"]
-        
-        CLASS_OBJ = out["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"]
+        if "RESULT" in out['GET_META_INFO'].keys():
+            if "STATUS" in out["GET_META_INFO"]["RESULT"].keys():
+                self.STATUS = out["GET_META_INFO"]["RESULT"]["STATUS"]
+            if "ERROR_MSG" in out["GET_META_INFO"]["RESULT"].keys():
+                self.ERROR_MSG = out["GET_META_INFO"]["RESULT"]["ERROR_MSG"]
+            if "DATE" in out["GET_META_INFO"]["RESULT"].keys():
+                self.DATE = out["GET_META_INFO"]["RESULT"]["DATE"]
+        if "PARAMETER" in out['GET_META_INFO'].keys():
+            if "LANG"  in out['GET_META_INFO']["PARAMETER"].keys():
+                self.LANG = out["GET_META_INFO"]["PARAMETER"]["LANG"]
+            if "DATA_FORMAT"  in out['GET_META_INFO']["PARAMETER"].keys():
+                self.DATA_FORMAT = out["GET_META_INFO"]["PARAMETER"]["DATA_FORMAT"]
+        if "METADATA_INF" in out['GET_META_INFO'].keys():
+            if "TABLE_INF" in out['GET_META_INFO']["METADATA_INF"].keys():
+                self.TABLE_INF = out["GET_META_INFO"]["METADATA_INF"]["TABLE_INF"]
+                if "STAT_NAME" in self.TABLE_INF.keys():
+                    self.STAT_NAME = self.TABLE_INF["STAT_NAME"]
+                if "GOV_ORG" in self.TABLE_INF.keys():
+                    self.GOV_ORG = self.TABLE_INF["GOV_ORG"]
+                if "STATISTICS_NAME" in self.TABLE_INF.keys():
+                    self.STATISTICS_NAME = self.TABLE_INF["STATISTICS_NAME"]
+                if "TITLE" in self.TABLE_INF.keys():
+                    self.TITLE = self.TABLE_INF["TITLE"]
+                if "CYCLE" in self.TABLE_INF.keys():
+                    self.CYCLE = self.TABLE_INF["CYCLE"]
+                if "SURVEY_DATE" in self.TABLE_INF.keys():
+                    self.SURVEY_DATE = self.TABLE_INF["SURVEY_DATE"]
+                if "OPEN_DATE" in self.TABLE_INF.keys():
+                    self.OPEN_DATE = self.TABLE_INF["OPEN_DATE"]
+                if "SMALL_AREA" in self.TABLE_INF.keys():
+                    self.SMALL_AREA = self.TABLE_INF["SMALL_AREA"]
+                if "COLLECT_AREA" in self.TABLE_INF.keys():
+                    self.COLLECT_AREA = self.TABLE_INF["COLLECT_AREA"]
+                if "MAIN_CATEGORY" in self.TABLE_INF.keys():
+                    self.MAIN_CATEGORY = self.TABLE_INF["MAIN_CATEGORY"]
+                if "SUB_CATEGORY" in self.TABLE_INF.keys():
+                    self.SUB_CATEGORY = self.TABLE_INF["SUB_CATEGORY"]
+                if "OVERALL_TOTAL_NUMBER" in self.TABLE_INF.keys():
+                    self.OVERALL_TOTAL_NUMBER = self.TABLE_INF["OVERALL_TOTAL_NUMBER"]
+                if "UPDATED_DATE" in self.TABLE_INF.keys():
+                    self.UPDATED_DATE = self.TABLE_INF["UPDATED_DATE"]
+                if "STATISTICS_NAME_SPEC" in self.TABLE_INF.keys():
+                    self.STATISTICS_NAME_SPEC = self.TABLE_INF["STATISTICS_NAME_SPEC"]
+                if "TABULATION_SUB_CATEGORY1" in self.TABLE_INF.keys():
+                    self.TABULATION_SUB_CATEGORY1 = self.TABLE_INF["TABULATION_SUB_CATEGORY1"]
+                if "DESCRIPTION" in self.TABLE_INF.keys():
+                    self.DESCRIPTION = self.TABLE_INF["DESCRIPTION"]
+                if "TITLE_SPEC" in self.TABLE_INF.keys():
+                    self.TITLE_SPEC = self.TABLE_INF["TITLE_SPEC"]
+
+        self.CLASS_OBJ = out["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"]
         dfs = []
-        if isinstance(CLASS_OBJ, list):
-            for co in CLASS_OBJ:
+        if isinstance(self.CLASS_OBJ, list):
+            for co in self.CLASS_OBJ:
                 CLASS = co["CLASS"]
                 if isinstance(CLASS, list):
                     CLASS = pd.DataFrame(co["CLASS"])
@@ -302,8 +345,21 @@ class MetaInfoReader(_eStatReader):
             print("CLASS_OBJはlist型ではありません。")
 
         return dfs
+                
 
 class StatsDataReader(_eStatReader):
+    """
+    Get data for the given name from eStat.
+
+    .. versionadded:: 3.0
+
+    Parameters
+    ----------
+    api_key : str, optional
+        eStat API key.
+        取得したアプリケーションID(appId)を指定.
+    header : "name" or "id"
+    """
 
     def __init__(
         self,
@@ -489,26 +545,41 @@ class StatsDataReader(_eStatReader):
         
         return pdict
 
-    def read(self, normal=True):
+    def read(self, normal=True, split_units=False):
         """Read data from connector"""
         try:
             data = self._read(self.url, self.params)
             if normal:
                 return data
             else:
-                data["unit"] = data["unit"].fillna("")
-                dims = self.attributes
-                dims.remove("$")
-                dfs = []
-                for u in data["unit"].unique():
-                    df = data[data["unit"]==u]
-                    df = df.drop(dims + [c for c in df.columns if (("unit" in c) | ("level" in c))], axis=1)
-                    df = df.set_index([c for c in df.columns if "name" in c]).unstack(self.cols_name)
+                def denormalization(df, header):
+                    if header == "name":
+                        df = df.drop([c for c in df.columns if (('コード' in c)|('階層レベル' in c)|('unit' in c)|('単位' in c)|('親コード' in c)|('追加情報' in c))], axis=1)
+                        df = df.set_index([c for c in df.columns if "名" in c]).unstack(self.tabcol)
+                    else:
+                        df = df.drop([c for c in df.columns if (('code' in c)|('level' in c)|('unit' in c)|('parentCode' in c)|('addInf' in c))], axis=1)
+                        df = df.set_index([c for c in df.columns if "name" in c]).unstack(self.tabcol)
                     df.columns = [l2 for l1, l2 in df.columns]
                     df = df.reset_index()
-                    df.columns = list(map(lambda x: x.rstrip("_name"), df.columns.values.tolist()))
-                    dfs.append(df)
-                return dfs
+                    df.columns = list(map(lambda x: x.replace("_name", "").rstrip("名"), df.columns.values.tolist()))
+                    return df
+
+                if split_units:
+                    if "単位コード" in data.columns:
+                        data["単位コード"] = data["単位コード"].fillna("単位なし")
+                        data.rename(columns={"単位コード": "unit"}, inplace=True)
+                    elif "unit_code" in data.columns:
+                        data["unit_code"] = data["unit_code"].fillna("単位なし")
+                        data.rename(columns={"unit_code": "unit"}, inplace=True)
+
+                    datasets = {}
+                    for u in data["unit"].unique():
+                        df = data[data["unit"]==u]
+                        datasets[u] = denormalization(df, self.header)
+                    return datasets
+                else:
+                    return denormalization(data, self.header)
+
         finally:
             self.close()
 
@@ -516,6 +587,7 @@ class StatsDataReader(_eStatReader):
         if self.limit is None:
             out = self._get_response(url, params=dict(**params, **{"limit": 1})).json()
             OVERALL_TOTAL_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["TABLE_INF"]["OVERALL_TOTAL_NUMBER"]
+
             if OVERALL_TOTAL_NUMBER > 100000:
                 ptrans = {"tab": "cdTab",
                     "time": "cdTime",
@@ -526,7 +598,7 @@ class StatsDataReader(_eStatReader):
                     "cat04": "cdCat04"}
 
                 cls = pd.DataFrame([[n, co["@id"], len(co["CLASS"])] for n, co in enumerate(out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"]) if isinstance(co["CLASS"], list)]).sort_values(2, ascending=False)
-
+ 
                 param_names = []
                 codes = []
                 tn = OVERALL_TOTAL_NUMBER
@@ -553,7 +625,7 @@ class StatsDataReader(_eStatReader):
                         dfs.append(self._read_one_data(url, params))
                     finally:
                         self.close()
-                return pd.concat(dfs, axis=0)
+                return pd.concat(dfs, axis=0).reset_index(drop=True)
 
             else:
                 return self._read_one_data(url, params)
@@ -564,30 +636,61 @@ class StatsDataReader(_eStatReader):
         """read one data from specified URL"""
         out = self._get_response(url, params=params).json()
 
-        self.STATUS = out["GET_STATS_DATA"]["RESULT"]["STATUS"]
-        self.ERROR_MSG = out["GET_STATS_DATA"]["RESULT"]["ERROR_MSG"]
-        self.DATE = out["GET_STATS_DATA"]["RESULT"]["DATE"]
-        self.LANG = out["GET_STATS_DATA"]["PARAMETER"]["LANG"]
-        self.DATA_FORMAT = out["GET_STATS_DATA"]["PARAMETER"]["DATA_FORMAT"]
-        self.START_POSITION = out["GET_STATS_DATA"]["PARAMETER"]["START_POSITION"]
-        self.METAGET_FLG = out["GET_STATS_DATA"]["PARAMETER"]["METAGET_FLG"]
-        self.TOTAL_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["TOTAL_NUMBER"]
-        self.FROM_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["FROM_NUMBER"]
-        self.TO_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["TO_NUMBER"]
-        self.TABLE_INF = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["TABLE_INF"]
-        self.STATISTICS_NAME = self.TABLE_INF["STATISTICS_NAME"]
-        self.CYCLE = self.TABLE_INF["CYCLE"]
-        self.OVERALL_TOTAL_NUMBER = self.TABLE_INF["OVERALL_TOTAL_NUMBER"]
-        self.NOTE = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"]["NOTE"]
+        if "RESULT" in out["GET_STATS_DATA"].keys():
+            if "STATUS" in out["GET_STATS_DATA"]["RESULT"].keys():
+                self.STATUS = out["GET_STATS_DATA"]["RESULT"]["STATUS"]
+            if "ERROR_MSG" in out["GET_STATS_DATA"]["RESULT"].keys():
+                self.ERROR_MSG = out["GET_STATS_DATA"]["RESULT"]["ERROR_MSG"]
+            if "DATE" in out["GET_STATS_DATA"]["RESULT"].keys():
+                self.DATE = out["GET_STATS_DATA"]["RESULT"]["DATE"]
 
         VALUE = pd.DataFrame(out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"]["VALUE"])
-        self.attributes = list(map(lambda x: x.lstrip("@"), VALUE.columns.values.tolist()))
-        VALUE.columns = self.attributes
+        self.attrlist = list(map(lambda x: x.lstrip("@"), VALUE.columns.values.tolist()))
+        VALUE.columns = self.attrlist
+
+        if "PARAMETER" in out["GET_STATS_DATA"].keys():
+            if "LANG" in out["GET_STATS_DATA"]["PARAMETER"].keys():
+                self.LANG = out["GET_STATS_DATA"]["PARAMETER"]["LANG"]
+            if "DATA_FORMAT" in out["GET_STATS_DATA"]["PARAMETER"].keys():
+                self.DATA_FORMAT = out["GET_STATS_DATA"]["PARAMETER"]["DATA_FORMAT"]
+            if "START_POSITION" in out["GET_STATS_DATA"]["PARAMETER"].keys():
+                self.START_POSITION = out["GET_STATS_DATA"]["PARAMETER"]["START_POSITION"]
+            if "METAGET_FLG" in out["GET_STATS_DATA"]["PARAMETER"].keys():
+                self.METAGET_FLG = out["GET_STATS_DATA"]["PARAMETER"]["METAGET_FLG"]        
+        if "STATISTICAL_DATA" in out["GET_STATS_DATA"].keys():
+            if "RESULT_INF" in out["GET_STATS_DATA"]["STATISTICAL_DATA"].keys():
+                if "TOTAL_NUMBER" in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"].keys():
+                    self.TOTAL_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["TOTAL_NUMBER"]
+                if "FROM_NUMBER" in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"].keys():
+                    self.FROM_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["FROM_NUMBER"]
+                if "TO_NUMBER" in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"].keys():
+                    self.TO_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["TO_NUMBER"]
+            if "TABLE_INF" in out["GET_STATS_DATA"]["STATISTICAL_DATA"].keys():
+                self.TABLE_INF = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["TABLE_INF"]
+                if "STATISTICS_NAME" in self.TABLE_INF.keys():
+                    self.STATISTICS_NAME = self.TABLE_INF["STATISTICS_NAME"]
+                if "CYCLE" in self.TABLE_INF.keys():
+                    self.CYCLE = self.TABLE_INF["CYCLE"]
+                if "OVERALL_TOTAL_NUMBER" in self.TABLE_INF.keys():
+                    self.OVERALL_TOTAL_NUMBER = self.TABLE_INF["OVERALL_TOTAL_NUMBER"]
+            if "DATA_INF" in out["GET_STATS_DATA"]["STATISTICAL_DATA"].keys():
+                if "NOTE" in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"].keys():
+                    self.NOTE = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"]["NOTE"]
+                    if isinstance(self.NOTE, list):
+                        note_char = [n["@char"] for n in self.NOTE]
+                        VALUE["$"] = VALUE["$"].replace(note_char, self.na_values)
+                    elif isinstance(self.NOTE, dict):
+                        note_char = self.NOTE["@char"]
+                        VALUE["$"] = VALUE["$"].replace(note_char, self.na_values)
+                    if np.isnan(self.na_values):
+                        VALUE["$"] =  VALUE["$"].astype(float)
 
         CLASS_OBJ = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"]
+        self.attrdict = {}
         if isinstance(CLASS_OBJ, list):
             for co in CLASS_OBJ:
                 CLASS = co["CLASS"]
+                self.attrdict.update({co["@id"]: co["@name"]})
                 if isinstance(CLASS, list):
                     CLASS = pd.DataFrame(co["CLASS"])
                 elif isinstance(CLASS, dict):
@@ -595,26 +698,28 @@ class StatsDataReader(_eStatReader):
                 else:
                     continue
                 CLASS = CLASS.set_index("@code")
-                if self.header == "code":
+                if self.header == "id":
                     CLASS.columns = list(map(lambda x: co["@id"] + "_" + x.lstrip("@"), CLASS.columns.values.tolist()))
-                    self.cols_name = "tab_name"
+                    self.tabcol = "tab_name"
+                    VALUE = VALUE.merge(CLASS, left_on=co["@id"], right_index=True, how="left")
                 else:
-                    CLASS.columns = list(map(lambda x: co["@name"] + "_" + x.lstrip("@"), CLASS.columns.values.tolist()))
-                    self.cols_name = "表章項目_name"
-                VALUE = VALUE.merge(CLASS, left_on=co["@id"], right_index=True, how="left")
+                    CLASS.columns = list(map(lambda x: co["@name"] + x.lstrip("@"), CLASS.columns.values.tolist()))
+                    self.tabcol = "表章項目名"
+                    VALUE = VALUE.merge(CLASS, left_on=co["@id"], right_index=True, how="left")
         else:
             print("CLASS_OBJはlist型ではありません。")
-            
-        if isinstance(self.NOTE, list):
-            note_char = [n["@char"] for n in self.NOTE]
-            VALUE["$"] = VALUE["$"].replace(note_char, self.na_values)
-        elif isinstance(self.NOTE, dict):
-            note_char = self.NOTE["@char"]
-            VALUE["$"] = VALUE["$"].replace(note_char, self.na_values)
-        if np.isnan(self.na_values):
-            VALUE["$"] =  VALUE["$"].astype(float)
-            
-        VALUE.rename(columns={"$": "value"}, inplace=True)
+
+        VALUE.columns = VALUE.columns = [c + "_code" if c in self.attrlist else c for c in VALUE.columns ]
+        VALUE.rename(columns={"$_code": "value"}, inplace=True)
+        if self.header == "name":
+            self.attrdict.update({"unit": "単位", "anotation": "注釈記号", "code": "コード", "name": "名", "level": "階層レベル", "parentCode": "親コード", "addInf": "追加情報"})
+            cols = []
+            for c in VALUE.columns:
+                for k in self.attrdict.keys():
+                    c = c.replace(k, self.attrdict[k])
+                cols += [c.replace("_", "")]
+            VALUE.columns = cols
+            VALUE.rename(columns={"value": "値"}, inplace=True)
             
         if isinstance(self.TABLE_INF["TITLE"], dict):
             self.TITLE = self.TABLE_INF["TITLE"]["$"]
