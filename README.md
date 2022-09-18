@@ -6,11 +6,23 @@
 
 https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0
 
-### e-StatAPIで統計データ取得
+## Installation
 
-```shell
+Install using `pip`
+
+``` shell
 pip install jpy-datareader
 ```
+
+## Usage
+
+``` python
+import jpy_datareader as jdr
+api_key = "xxxx"
+jdr.get_data_estat_statsdata(api_key, statsDataId="0003109558")
+```
+
+### e-StatAPIで統計データ取得
 
 ```Python
 import jpy_datareader as jdr
