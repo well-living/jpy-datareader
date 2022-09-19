@@ -17,6 +17,9 @@ from jpy_datareader.base import _BaseReader
 _version = "3.0"
 _BASE_URL = f"https://api.e-stat.go.jp/rest/{_version}/app/json"
 
+attrdict = {"code": "コード", "name": "名", "level": "階層レベル", "unit": "単位", "parentCode": "親コード", "addInf": "追加情報",
+            "tab": "表章項目", "cat": "分類", "area": "地域", "time": "時間軸", "anotation": "注釈記号"}
+
 class _eStatReader(_BaseReader):
     """
     Get data for the given name from eStat.
@@ -80,9 +83,17 @@ class _eStatReader(_BaseReader):
             "api_key": self.api_key,
         }
         paramstring = urllib.parse.urlencode(query=params)
-        url = "{url}{params}".format(url=StatsList_URL, params=paramstring)
+        url = "{url}{params}".format(url=self.url, params=paramstring)
         return url
 
+    def rename_japanese(self, df):
+        cols = []
+        for c in df.columns:
+            for k in attrdict.keys():
+                c = c.replace(k, attrdict[k])
+            cols += [c]
+        df.columns = cols
+        return df
 
 class StatsListReader(_eStatReader):
 
@@ -192,18 +203,30 @@ class StatsListReader(_eStatReader):
         """read one data from specified URL"""
         out = self._get_response(url, params=params).json()
         
-        self.STATUS = out["GET_STATS_LIST"]["RESULT"]["STATUS"]
-        self.ERROR_MSG = out["GET_STATS_LIST"]["RESULT"]["ERROR_MSG"]
-        self.DATE = out["GET_STATS_LIST"]["RESULT"]["DATE"]
-        self.LANG = out["GET_STATS_LIST"]["PARAMETER"]["LANG"]
-        self.DATA_FORMAT = out["GET_STATS_LIST"]["PARAMETER"]["DATA_FORMAT"]
+        if "RESULT" in out["GET_STATS_LIST"].keys():
+            if "STATUS" in out["GET_STATS_LIST"]["RESULT"].keys():
+                self.STATUS = out["GET_STATS_LIST"]["RESULT"]["STATUS"]
+            if "ERROR_MSG" in out["GET_STATS_LIST"]["RESULT"].keys():
+                self.ERROR_MSG = out["GET_STATS_LIST"]["RESULT"]["ERROR_MSG"]
+            if "DATE" in out["GET_STATS_LIST"]["RESULT"].keys():
+                self.DATE = out["GET_STATS_LIST"]["RESULT"]["DATE"]
+        if "PARAMETER" in out["GET_STATS_LIST"].keys():
+            if "LANG" in out["GET_STATS_LIST"]["PARAMETER"].keys():
+                self.LANG = out["GET_STATS_LIST"]["RESULT"]["LANG"]
+            if "DATA_FORMAT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
+                self.DATA_FORMAT = out["GET_STATS_LIST"]["RESULT"]["DATA_FORMAT"]
         if "LIMIT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
             self.LIMIT = out["GET_STATS_LIST"]["PARAMETER"]["LIMIT"]
-        self.NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["NUMBER"]
-        self.FROM_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["FROM_NUMBER"]
-        self.TO_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["TO_NUMBER"]
-        if "NEXT_KEY" in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys():
-            self.NEXT_KEY = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["NEXT_KEY"]
+        if "DATALIST_INF" in out["GET_STATS_LIST"].keys():
+            if "NUMBER" in out["GET_STATS_LIST"]["DATALIST_INF"].keys():
+                self.NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["NUMBER"]
+            if "RESULT_INF" in out["GET_STATS_LIST"]["DATALIST_INF"].keys():
+                if "FROM_NUMBER" in  out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys():
+                    self.FROM_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["FROM_NUMBER"]
+                if "TO_NUMBER" in  out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys():
+                    self.TO_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["TO_NUMBER"]
+                if "NEXT_KEY" in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys():
+                    self.NEXT_KEY = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["NEXT_KEY"]
 
         TABLE_INF = pd.json_normalize(out, record_path=["GET_STATS_LIST", "DATALIST_INF", "TABLE_INF"], sep="_")
         TABLE_INF.columns = list(map(lambda x: x.replace("@", "").rstrip("_$"), TABLE_INF.columns.values.tolist()))
@@ -216,12 +239,15 @@ class MetaInfoReader(_eStatReader):
     def __init__(
         self,
         api_key,
+        statsDataId="",
+        header="name",
+        lvhierarchy=False,
+        lvfillna=False,
         explanationGetFlg=None,
         retry_count=3,
         pause=0.1,
         timeout=30,
         session=None,
-        statsDataId="",
     ):
 
         super().__init__(
@@ -244,6 +270,9 @@ class MetaInfoReader(_eStatReader):
 
         self.api_key = api_key
         self.statsDataId = statsDataId
+        self.header = header
+        self.lvhierarchy = lvhierarchy
+        self.lvfillna = lvfillna
         self.explanationGetFlg = explanationGetFlg
 
     @property
@@ -277,13 +306,9 @@ class MetaInfoReader(_eStatReader):
         """read one data from specified URL"""
         out = self._get_response(url, params=params).json()
 
-        if "RESULT" in out['GET_META_INFO'].keys():
-            if "STATUS" in out["GET_META_INFO"]["RESULT"].keys():
-                self.STATUS = out["GET_META_INFO"]["RESULT"]["STATUS"]
-            if "ERROR_MSG" in out["GET_META_INFO"]["RESULT"].keys():
-                self.ERROR_MSG = out["GET_META_INFO"]["RESULT"]["ERROR_MSG"]
-            if "DATE" in out["GET_META_INFO"]["RESULT"].keys():
-                self.DATE = out["GET_META_INFO"]["RESULT"]["DATE"]
+        self.STATUS = out["GET_META_INFO"]["RESULT"]["STATUS"]
+        self.ERROR_MSG = out["GET_META_INFO"]["RESULT"]["ERROR_MSG"]
+        self.DATE = out["GET_META_INFO"]["RESULT"]["DATE"]
         if "PARAMETER" in out['GET_META_INFO'].keys():
             if "LANG"  in out['GET_META_INFO']["PARAMETER"].keys():
                 self.LANG = out["GET_META_INFO"]["PARAMETER"]["LANG"]
@@ -328,7 +353,8 @@ class MetaInfoReader(_eStatReader):
                     self.TITLE_SPEC = self.TABLE_INF["TITLE_SPEC"]
 
         self.CLASS_OBJ = out["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"]
-        dfs = []
+
+        dfs = {}
         if isinstance(self.CLASS_OBJ, list):
             for co in self.CLASS_OBJ:
                 CLASS = co["CLASS"]
@@ -338,14 +364,40 @@ class MetaInfoReader(_eStatReader):
                     CLASS = pd.DataFrame(pd.Series(co["CLASS"])).T
                 else:
                     print(co["@name"] + "はlist型でもdict型でもありません。")
-                    continue
-                CLASS.columns = list(map(lambda x: co["@name"] + "_" + x.lstrip("@"), CLASS.columns.values.tolist()))
-                dfs.append(CLASS)
+                CLASS.columns = list(map(lambda x: x.lstrip("@"), CLASS.columns.values.tolist()))
+
+                is_hierarchy = self.lvhierarchy & (len(CLASS['level'].unique()) > 1)
+                if is_hierarchy:
+                    levels = self.hierarchy_level(CLASS, co['@id'])
+
+                if self.header == "name":
+                    CLASS.columns = list(map(lambda x: co["@name"] + x, CLASS.columns.values.tolist()))
+                    CLASS = self.rename_japanese(CLASS)
+                else:
+                    CLASS.columns = list(map(lambda x: co["@id"] + "_" + x, CLASS.columns.values.tolist()))
+
+                if is_hierarchy:
+                    dfs[co['@id']] = [CLASS, levels]
+                else:
+                    dfs[co['@id']] = CLASS
+
         else:
             print("CLASS_OBJはlist型ではありません。")
 
         return dfs
-                
+
+    def hierarchy_level(self, df, id):
+        levels = df[df["level"]=='1'][["code"]]
+        levels.columns = ["level1"]
+        for lv in np.sort(df["level"].unique().astype(int))[1:]:
+            child = df[df["level"]==str(lv)][["parentCode", "code"]]
+            child.columns = ["level"+str(lv-1), "level"+str(lv)]
+            levels = levels.merge(child, on="level"+str(lv-1), how="left")
+        if self.lvfillna:
+            levels = levels.fillna(method="ffill", axis=1)
+        levels.columns = list(map(lambda x: id + "_" + x, levels.columns.values.tolist()))
+        return levels
+
 
 class StatsDataReader(_eStatReader):
     """
@@ -686,11 +738,9 @@ class StatsDataReader(_eStatReader):
                         VALUE["$"] =  VALUE["$"].astype(float)
 
         CLASS_OBJ = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"]
-        self.attrdict = {}
         if isinstance(CLASS_OBJ, list):
             for co in CLASS_OBJ:
                 CLASS = co["CLASS"]
-                self.attrdict.update({co["@id"]: co["@name"]})
                 if isinstance(CLASS, list):
                     CLASS = pd.DataFrame(co["CLASS"])
                 elif isinstance(CLASS, dict):
@@ -712,13 +762,7 @@ class StatsDataReader(_eStatReader):
         VALUE.columns = VALUE.columns = [c + "_code" if c in self.attrlist else c for c in VALUE.columns ]
         VALUE.rename(columns={"$_code": "value"}, inplace=True)
         if self.header == "name":
-            self.attrdict.update({"unit": "単位", "anotation": "注釈記号", "code": "コード", "name": "名", "level": "階層レベル", "parentCode": "親コード", "addInf": "追加情報"})
-            cols = []
-            for c in VALUE.columns:
-                for k in self.attrdict.keys():
-                    c = c.replace(k, self.attrdict[k])
-                cols += [c.replace("_", "")]
-            VALUE.columns = cols
+            VALUE = self.rename_japanese(VALUE)
             VALUE.rename(columns={"value": "値"}, inplace=True)
             
         if isinstance(self.TABLE_INF["TITLE"], dict):
