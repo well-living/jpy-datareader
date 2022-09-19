@@ -10,7 +10,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="jpy_datareader",
-    version="0.0.2",
+    version="0.0.3",
     description="Remote data access to government data for pandas.",
     author="well-living",
     license="MIT",
