@@ -1,10 +1,4 @@
-# jpy-datareader
-
-## 政府統計の総合窓口（e-Stat）のAPI3.0版でデータ取得するPythonコード
-
-- 政府統計の総合窓口（e-Stat）のAPI3.0版の仕様
-
-https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0
+# JPy-DataReader
 
 ## Installation
 
@@ -16,26 +10,25 @@ pip install jpy-datareader
 
 ## Usage
 
-``` python
-import jpy_datareader as jdr
-api_key = "xxxx"
-jdr.get_data_estat_statsdata(api_key, statsDataId="0003109558")
-```
-
-### e-StatAPIで統計データ取得
-
-```Python
-import jpy_datareader as jdr
-
-api_key = "xxxx"
-dfs = jdr.get_data_estat_statsdata(api_key, statsDataId="0003109558")
-```
-
 ```Python
 import jpy_datareader.data as web
 
-api_key = "xxxx"
-f = web.DataReader("0003109558", "estat", api_key=api_key)
+api_key = "Your_Application_ID"
+df = web.DataReader("0003109558", "estat", api_key=api_key)
+```
+
+### 政府統計の総合窓口（e-Stat）のAPI3.0版で統計データ取得
+
+- 政府統計の総合窓口（e-Stat）のAPI3.0版の仕様
+
+https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0
+
+
+``` python
+import jpy_datareader as jdr
+
+api_key = "Your_Application_ID"
+jdr.get_data_estat_statsdata(api_key, statsDataId="0003109558")
 ```
 
 ```Python
@@ -49,7 +42,7 @@ df = statsdata.read()
 ```Python
 import jpy_datareader as jdr
 
-api_key = "xxxx"
+api_key = "Your_Application_ID"
 statslist = jdr.get_data_estat_statslist(api_key)
 ```
 
