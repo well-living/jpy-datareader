@@ -14,5 +14,5 @@ __all__ = [
     "get_data_estat_statslist",
     "get_data_estat_metainfo",
     "get_data_estat_statsdata",
-    "get_data_estat_datacatalog"
+    "get_data_estat_datacatalog",
 ]

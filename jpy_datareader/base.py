@@ -9,6 +9,8 @@ from jpy_datareader._utils import (
     _init_session,
 )
 
+testVar = 5
+
 
 class _BaseReader:
     """
