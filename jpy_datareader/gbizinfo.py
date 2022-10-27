@@ -14,10 +14,10 @@ from jpy_datareader.base import _BaseReader
 _version = "v1"
 _BASE_URL = f"https://info.gbiz.go.jp/hojin/{_version}/hojin"
 
+
 class _gBizInfoReader(_BaseReader):
-    """
-    
-    """
+    """ """
+
     def __init__(
         self,
         retry_count=3,
@@ -75,7 +75,6 @@ class _gBizInfoReader(_BaseReader):
 
 
 class hojinReader(_gBizInfoReader):
-
     def __init__(
         self,
         api_key,
@@ -155,16 +154,30 @@ class hojinReader(_gBizInfoReader):
         self.unified_qualification_sub02 = unified_qualification_sub02
         self.unified_qualification_sub03 = unified_qualification_sub03
         self.unified_qualification_sub04 = unified_qualification_sub04
-        self.net_sales_summary_of_business_results_from = net_sales_summary_of_business_results_from
-        self.net_sales_summary_of_business_results_to = net_sales_summary_of_business_results_to
-        self.net_income_loss_summary_of_business_results_from = net_income_loss_summary_of_business_results_from
-        self.net_income_loss_summary_of_business_results_to = net_income_loss_summary_of_business_results_to
-        self.total_assets_summary_of_business_results_from = total_assets_summary_of_business_results_from
-        self.total_assets_summary_of_business_results_to = total_assets_summary_of_business_results_to
+        self.net_sales_summary_of_business_results_from = (
+            net_sales_summary_of_business_results_from
+        )
+        self.net_sales_summary_of_business_results_to = (
+            net_sales_summary_of_business_results_to
+        )
+        self.net_income_loss_summary_of_business_results_from = (
+            net_income_loss_summary_of_business_results_from
+        )
+        self.net_income_loss_summary_of_business_results_to = (
+            net_income_loss_summary_of_business_results_to
+        )
+        self.total_assets_summary_of_business_results_from = (
+            total_assets_summary_of_business_results_from
+        )
+        self.total_assets_summary_of_business_results_to = (
+            total_assets_summary_of_business_results_to
+        )
         self.name_major_shareholders = name_major_shareholders
         self.average_continuous_service_years = average_continuous_service_years
         self.average_age = average_age
-        self.month_average_predetermined_overtime_hours = month_average_predetermined_overtime_hours
+        self.month_average_predetermined_overtime_hours = (
+            month_average_predetermined_overtime_hours
+        )
         self.female_workers_proportion = female_workers_proportion
         self.year = year
         self.ministry = ministry
@@ -182,7 +195,7 @@ class hojinReader(_gBizInfoReader):
     def params(self):
         """Parameters to use in API calls"""
         pdict = {}
-        
+
         if isinstance(self.corporate_number, (str, int)):
             pdict.update({"corporate_number": self.corporate_number})
         if isinstance(self.name, str):
@@ -212,33 +225,75 @@ class hojinReader(_gBizInfoReader):
         if isinstance(self.unified_qualification, str):
             pdict.update({"unified_qualification": self.unified_qualification})
         if isinstance(self.unified_qualification_sub01, str):
-            pdict.update({"unified_qualification_sub01": self.unified_qualification_sub01})
+            pdict.update(
+                {"unified_qualification_sub01": self.unified_qualification_sub01}
+            )
         if isinstance(self.unified_qualification_sub02, str):
-            pdict.update({"unified_qualification_sub02": self.unified_qualification_sub02})
+            pdict.update(
+                {"unified_qualification_sub02": self.unified_qualification_sub02}
+            )
         if isinstance(self.unified_qualification_sub03, str):
-            pdict.update({"unified_qualification_sub03": self.unified_qualification_sub03})
+            pdict.update(
+                {"unified_qualification_sub03": self.unified_qualification_sub03}
+            )
         if isinstance(self.unified_qualification_sub04, str):
-            pdict.update({"unified_qualification_sub04": self.unified_qualification_sub04})
+            pdict.update(
+                {"unified_qualification_sub04": self.unified_qualification_sub04}
+            )
         if isinstance(self.net_sales_summary_of_business_results_from, (str, int)):
-            pdict.update({"net_sales_summary_of_business_results_from": self.net_sales_summary_of_business_results_from})
+            pdict.update(
+                {
+                    "net_sales_summary_of_business_results_from": self.net_sales_summary_of_business_results_from
+                }
+            )
         if isinstance(self.net_sales_summary_of_business_results_to, (str, int)):
-            pdict.update({"net_sales_summary_of_business_results_to": self.net_sales_summary_of_business_results_to})
-        if isinstance(self.net_income_loss_summary_of_business_results_from, (str, int)):
-            pdict.update({"net_income_loss_summary_of_business_results_from": self.net_income_loss_summary_of_business_results_from})
+            pdict.update(
+                {
+                    "net_sales_summary_of_business_results_to": self.net_sales_summary_of_business_results_to
+                }
+            )
+        if isinstance(
+            self.net_income_loss_summary_of_business_results_from, (str, int)
+        ):
+            pdict.update(
+                {
+                    "net_income_loss_summary_of_business_results_from": self.net_income_loss_summary_of_business_results_from
+                }
+            )
         if isinstance(self.net_income_loss_summary_of_business_results_to, (str, int)):
-            pdict.update({"net_income_loss_summary_of_business_results_to": self.net_income_loss_summary_of_business_results_to})
+            pdict.update(
+                {
+                    "net_income_loss_summary_of_business_results_to": self.net_income_loss_summary_of_business_results_to
+                }
+            )
         if isinstance(self.total_assets_summary_of_business_results_from, (str, int)):
-            pdict.update({"total_assets_summary_of_business_results_from": self.total_assets_summary_of_business_results_from})
+            pdict.update(
+                {
+                    "total_assets_summary_of_business_results_from": self.total_assets_summary_of_business_results_from
+                }
+            )
         if isinstance(self.total_assets_summary_of_business_results_to, (str, int)):
-            pdict.update({"total_assets_summary_of_business_results_to": self.total_assets_summary_of_business_results_to})
+            pdict.update(
+                {
+                    "total_assets_summary_of_business_results_to": self.total_assets_summary_of_business_results_to
+                }
+            )
         if isinstance(self.name_major_shareholders, str):
             pdict.update({"name_major_shareholders": self.name_major_shareholders})
         if isinstance(self.average_continuous_service_years, (str, int)):
-            pdict.update({"average_continuous_service_years": self.average_continuous_service_years})
+            pdict.update(
+                {
+                    "average_continuous_service_years": self.average_continuous_service_years
+                }
+            )
         if isinstance(self.average_age, (str, int)):
             pdict.update({"average_age": self.average_age})
         if isinstance(self.month_average_predetermined_overtime_hours, (str, int)):
-            pdict.update({"month_average_predetermined_overtime_hours": self.month_average_predetermined_overtime_hours})
+            pdict.update(
+                {
+                    "month_average_predetermined_overtime_hours": self.month_average_predetermined_overtime_hours
+                }
+            )
         if isinstance(self.female_workers_proportion, str):
             pdict.update({"female_workers_proportion": self.female_workers_proportion})
         if isinstance(self.year, (str, int)):
@@ -253,7 +308,6 @@ class hojinReader(_gBizInfoReader):
             pdict.update({"limit": self.limit})
 
         return pdict
-
 
     def read(self):
         """Read data from connector"""
@@ -273,8 +327,7 @@ class hojinReader(_gBizInfoReader):
         return hojin_infos
 
 
-class corporate_naumberReader(_gBizInfoReader):
-
+class corporate_numberReader(_gBizInfoReader):
     def __init__(
         self,
         api_key,
@@ -313,7 +366,6 @@ class corporate_naumberReader(_gBizInfoReader):
 
 
 class certificationReader(_gBizInfoReader):
-
     def __init__(
         self,
         api_key,
@@ -351,7 +403,6 @@ class certificationReader(_gBizInfoReader):
 
 
 class commendationReader(_gBizInfoReader):
-
     def __init__(
         self,
         api_key,
@@ -390,7 +441,6 @@ class commendationReader(_gBizInfoReader):
 
 
 class financeReader(_gBizInfoReader):
-
     def __init__(
         self,
         api_key,
@@ -426,10 +476,9 @@ class financeReader(_gBizInfoReader):
         """API URL"""
         finance_URL = _BASE_URL + f"/{self.corporate_number}/finance?"
         return finance_URL
-    
+
 
 class patentReader(_gBizInfoReader):
-
     def __init__(
         self,
         api_key,
@@ -466,8 +515,8 @@ class patentReader(_gBizInfoReader):
         patent_URL = _BASE_URL + f"/{self.corporate_number}/patent?"
         return patent_URL
 
-class procurementReader(_gBizInfoReader):
 
+class procurementReader(_gBizInfoReader):
     def __init__(
         self,
         api_key,
@@ -504,8 +553,8 @@ class procurementReader(_gBizInfoReader):
         procurement_URL = _BASE_URL + f"/{self.corporate_number}/procurement?"
         return procurement_URL
 
-class subsidyReader(_gBizInfoReader):
 
+class subsidyReader(_gBizInfoReader):
     def __init__(
         self,
         api_key,
@@ -542,8 +591,8 @@ class subsidyReader(_gBizInfoReader):
         subsidy_URL = _BASE_URL + f"/{self.corporate_number}/subsidy?"
         return subsidy_URL
 
-class workplaceReader(_gBizInfoReader):
 
+class workplaceReader(_gBizInfoReader):
     def __init__(
         self,
         api_key,
