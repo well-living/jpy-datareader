@@ -657,7 +657,7 @@ class StatsDataReader(_eStatReader):
                         df = input.drop(
                             [
                                 c
-                                for c in df.columns
+                                for c in input.columns
                                 if (
                                     ("コード" in c)
                                     | ("階層レベル" in c)
@@ -673,10 +673,10 @@ class StatsDataReader(_eStatReader):
                             self.tabcol
                         )
                     else:
-                        df = df.drop(
+                        df = input.drop(
                             [
                                 c
-                                for c in df.columns
+                                for c in input.columns
                                 if (
                                     ("code" in c)
                                     | ("level" in c)
