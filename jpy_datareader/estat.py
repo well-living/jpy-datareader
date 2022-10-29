@@ -25,7 +25,7 @@ attrdict = {
     "cat": "分類",
     "area": "地域",
     "time": "時間軸",
-    "anotation": "注釈記号",
+    "annotation": "注釈記号",
 }
 
 
@@ -65,7 +65,7 @@ class _eStatReader(_BaseReader):
             raise ValueError(
                 "The eStat API key must be provided either "
                 "through the api_key variable or through the "
-                "environmental variable ESTAT_API_KEY."
+                "environment variable ESTAT_API_KEY."
             )
 
         self.api_key = api_key
@@ -240,17 +240,23 @@ class StatsListReader(_eStatReader):
                     "FROM_NUMBER"
                     in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys()
                 ):
-                    self.FROM_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["FROM_NUMBER"]
+                    self.FROM_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"][
+                        "RESULT_INF"
+                    ]["FROM_NUMBER"]
                 if (
                     "TO_NUMBER"
                     in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys()
                 ):
-                    self.TO_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["TO_NUMBER"]
+                    self.TO_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"][
+                        "RESULT_INF"
+                    ]["TO_NUMBER"]
                 if (
                     "NEXT_KEY"
                     in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys()
                 ):
-                    self.NEXT_KEY = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"]["NEXT_KEY"]
+                    self.NEXT_KEY = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"][
+                        "NEXT_KEY"
+                    ]
 
         TABLE_INF = pd.json_normalize(
             out, record_path=["GET_STATS_LIST", "DATALIST_INF", "TABLE_INF"], sep="_"
@@ -716,7 +722,9 @@ class StatsDataReader(_eStatReader):
     def _read(self, url, params):
         if self.limit is None:
             out = self._get_response(url, params=dict(**params, **{"limit": 1})).json()
-            OVERALL_TOTAL_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["TABLE_INF"]["OVERALL_TOTAL_NUMBER"]
+            OVERALL_TOTAL_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"][
+                "TABLE_INF"
+            ]["OVERALL_TOTAL_NUMBER"]
 
             if OVERALL_TOTAL_NUMBER > 100000:
                 ptrans = {
@@ -749,7 +757,9 @@ class StatsDataReader(_eStatReader):
                     codes.append(
                         list(
                             pd.DataFrame(
-                                out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"][cls.iloc[i, 0]]["CLASS"]
+                                out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"][
+                                    "CLASS_OBJ"
+                                ][cls.iloc[i, 0]]["CLASS"]
                             )["@code"]
                         )
                     )
