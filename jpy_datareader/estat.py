@@ -669,7 +669,6 @@ class StatsDataReader(_eStatReader):
                             ],
                             axis=1,
                         )
-
                     else:
                         df = input.drop(
                             [
@@ -686,8 +685,15 @@ class StatsDataReader(_eStatReader):
                             axis=1,
                         )
 
-                    df.columns = [l2 for l1, l2 in df.columns]
-                    df = df.reset_index()
+                    if self.tabcol in df.index.names:
+                        if header == "name":
+                            df = df.set_index([c for c in df.columns if "名" in c])
+                        else:
+                            df = df.set_index([c for c in df.columns if "name" in c])
+                        df = df.unstack(self.tabcol)
+                        df.columns = [l2 for l1, l2 in df.columns]
+                        df = df.reset_index()
+
                     df.columns = list(
                         map(
                             lambda x: x.replace("_name", "").rstrip("名"),
