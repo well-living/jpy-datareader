@@ -228,11 +228,9 @@ class StatsListReader(_eStatReader):
                 self.DATE = out["GET_STATS_LIST"]["RESULT"]["DATE"]
         if "PARAMETER" in out["GET_STATS_LIST"].keys():
             if "LANG" in out["GET_STATS_LIST"]["PARAMETER"].keys():
-                # LANG information contained in the PARAMETER dict
-                # rather than RESULT dict as expected
                 self.LANG = out["GET_STATS_LIST"]["PARAMETER"]["LANG"]
             if "DATA_FORMAT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
-                self.DATA_FORMAT = out["GET_STATS_LIST"]["RESULT"]["DATA_FORMAT"]
+                self.DATA_FORMAT = out["GET_STATS_LIST"]["PARAMETER"]["DATA_FORMAT"]
         if "LIMIT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
             self.LIMIT = out["GET_STATS_LIST"]["PARAMETER"]["LIMIT"]
         if "DATALIST_INF" in out["GET_STATS_LIST"].keys():
