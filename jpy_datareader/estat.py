@@ -216,6 +216,7 @@ class StatsListReader(_eStatReader):
 
     def _read_one_data(self, url, params):
         """read one data from specified URL"""
+        print(url)
         out = self._get_response(url, params=params).json()
 
         if "RESULT" in out["GET_STATS_LIST"].keys():
@@ -227,7 +228,9 @@ class StatsListReader(_eStatReader):
                 self.DATE = out["GET_STATS_LIST"]["RESULT"]["DATE"]
         if "PARAMETER" in out["GET_STATS_LIST"].keys():
             if "LANG" in out["GET_STATS_LIST"]["PARAMETER"].keys():
-                self.LANG = out["GET_STATS_LIST"]["RESULT"]["LANG"]
+                # LANG information contained in the PARAMETER dict
+                # rather than RESULT dict as expected
+                self.LANG = out["GET_STATS_LIST"]["PARAMETER"]["LANG"]
             if "DATA_FORMAT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
                 self.DATA_FORMAT = out["GET_STATS_LIST"]["RESULT"]["DATA_FORMAT"]
         if "LIMIT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
