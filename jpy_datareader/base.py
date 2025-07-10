@@ -1,5 +1,7 @@
+# jpy_datareader/base.py
 import time
 import urllib
+from typing import Optional, Dict, Any, Union
 
 import pandas as pd
 import requests
@@ -14,74 +16,95 @@ testVar = 5
 
 class _BaseReader:
     """
+    Base class for data readers with retry and session management.
+
     Parameters
     ----------
     retry_count : int, default 3
         Number of times to retry query request.
     pause : float, default 0.1
         Time, in seconds, of the pause between retries.
-    session : Session, default None
+    timeout : int, default 30
+        Request timeout in seconds.
+    session : Optional[requests.Session], default None
         requests.sessions.Session instance to be used.
-    freq : {str, None}
-        Frequency to use in select readers
     """
 
     def __init__(
         self,
-        retry_count=3,
-        pause=0.1,
-        timeout=30,
-        session=None,
-    ):
-
+        retry_count: int = 3,
+        pause: float = 0.1,
+        timeout: int = 30,
+        session: Optional[requests.Session] = None,
+    ) -> None:
         if not isinstance(retry_count, int) or retry_count < 0:
             raise ValueError("'retry_count' must be integer larger than 0")
+        
         self.retry_count = retry_count
         self.pause = pause
         self.timeout = timeout
         self.pause_multiplier = 1
         self.session = _init_session(session)
-        self.headers = None
+        self.headers: Optional[Dict[str, str]] = None
 
-    def close(self):
-        """Close network session"""
+    def close(self) -> None:
+        """Close network session."""
         self.session.close()
 
     @property
-    def url(self):
-        """API URL"""
-        # must be overridden in subclass
+    def url(self) -> str:
+        """API URL - must be overridden in subclass."""
         raise NotImplementedError
 
     @property
-    def params(self):
-        """Parameters to use in API calls"""
+    def params(self) -> Optional[Dict[str, Any]]:
+        """Parameters to use in API calls."""
         return None
 
-    def read(self):
-        """Read data from connector"""
+    def read(self) -> pd.DataFrame:
+        """Read data from connector."""
         try:
             return self._read_one_data(self.url, self.params)
         finally:
             self.close()
 
-    def _read_one_data(self, url, params):
-        """read one data from specified URL"""
+    def _read_one_data(self, url: str, params: Optional[Dict[str, Any]]) -> pd.DataFrame:
+        """Read one data from specified URL."""
         out = self._get_response(url, params=params).json()
         return self._read_lines(out)
 
-    def _get_response(self, url, params=None, headers=None):
-        """send raw HTTP request to get requests.Response from the specified url
+    def _get_response(
+        self, 
+        url: str, 
+        params: Optional[Dict[str, Any]] = None, 
+        headers: Optional[Dict[str, str]] = None
+    ) -> requests.Response:
+        """
+        Send raw HTTP request to get requests.Response from the specified url.
+        
         Parameters
         ----------
         url : str
-            target URL
-        params : dict or None
-            parameters passed to the URL
+            Target URL
+        params : Optional[Dict[str, Any]]
+            Parameters passed to the URL
+        headers : Optional[Dict[str, str]]
+            Headers for the request
+            
+        Returns
+        -------
+        requests.Response
+            Response object from the HTTP request
+            
+        Raises
+        ------
+        RemoteDataError
+            If unable to retrieve data after all retry attempts
         """
         headers = headers or self.headers
         pause = self.pause
         last_response_text = ""
+        
         for _ in range(self.retry_count + 1):
             response = self.session.get(
                 url, params=params, headers=headers, timeout=self.timeout
@@ -108,25 +131,25 @@ class _BaseReader:
 
         raise RemoteDataError(msg)
 
-    def _output_error(self, out):
-        """If necessary, a service can implement an interpreter for any non-200
-         HTTP responses.
+    def _read_lines(self, out: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Process JSON response into DataFrame.
+        
         Parameters
         ----------
-        out: bytes
-            The raw output from an HTTP request
+        out : Dict[str, Any]
+            JSON response data
+            
         Returns
         -------
-        boolean
+        pd.DataFrame
+            Processed DataFrame
         """
-        return False
-
-    def _read_lines(self, out):
         rs = pd.json_normalize(out, sep="_")
-        # Needed to remove blank space character in header names
-        rs.columns = list(map(lambda x: x.strip(), rs.columns.values.tolist()))
-
-        # eStat sometimes does this awesome thing where they ...
+        # Remove blank space character in header names
+        rs = rs.assign(**{
+            col.strip(): rs[col] for col in rs.columns
+        }).drop(columns=rs.columns.tolist())
 
         # Get rid of unicode characters in index name.
         try:

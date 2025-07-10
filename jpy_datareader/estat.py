@@ -1,57 +1,87 @@
+# jpy_datareader/estat.py
 # -*- coding: utf-8 -*-
 
 import os
 import time
 import urllib
 import warnings
+from typing import Tuple, List, Dict, Any, Optional, Union
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import requests
+
+try:
+    from dotenv import load_dotenv
+    DOTENV_AVAILABLE = True
+except ImportError:
+    DOTENV_AVAILABLE = False
 
 from jpy_datareader.base import _BaseReader
 
 _version = "3.0"
 _BASE_URL = f"https://api.e-stat.go.jp/rest/{_version}/app/json"
 
-attrdict = {
-    "code": "コード",
-    "name": "名",
-    "level": "階層レベル",
-    "unit": "単位",
-    "parentCode": "親コード",
-    "addInf": "追加情報",
-    "tab": "表章項目",
-    "cat": "分類",
-    "area": "地域",
-    "time": "時間軸",
+ATTR_DICT = {
+    "value": "値", 
+    "code": "コード", 
+    "name": "", 
+    "level": "階層レベル", 
+    "tab": "表章項目", 
+    "cat": "分類", 
+    "area": "地域", 
+    "time": "時間軸", 
+    "unit": "単位", 
+    "parentCode": "親コード", 
+    "addInf": "追加情報", 
     "annotation": "注釈記号",
 }
 
-
 class _eStatReader(_BaseReader):
     """
-    Get data for the given name from eStat.
-
-    .. versionadded:: 3.0
+    Base class for eStat API readers.
 
     Parameters
     ----------
-    api_key : str, optional
-        eStat API key.
-        取得したアプリケーションID(appId)を指定.
+    api_key : Optional[str], default None
+        取得したアプリケーションIDを指定して下さい。
+        eStat API key. If None, will try to get from environment variables
+        in the following order:
+        E_STAT_APPLICATION_ID, ESTAT_APPLICATION_ID,
+        E_STAT_APP_ID, ESTAT_APP_ID,
+        E_STAT_APPID, ESTAT_APPID,
+        E_STAT_API_KEY, ESTAT_API_KEY
+    lang : str, default "J"
+        取得するデータの言語を 以下のいずれかを指定して下さい。
+        ・J：日本語 (省略値)
+        ・E：英語
+        Language for retrieved data. Either "J" (Japanese) or "E" (English).
+    explanationGetFlg : Optional[str], default None
+        統計表及び、提供統計、提供分類、各事項の解説を取得するか否かを以下のいずれかから指定して下さい。
+        ・Y：取得する (省略値)
+        ・N：取得しない
+        Flag for getting explanation data ("Y" or "N").
+    retry_count : int, default 3
+        Number of times to retry query request.
+    pause : float, default 0.1
+        Time, in seconds, of the pause between retries.
+    timeout : int, default 30
+        Request timeout in seconds.
+    session : Optional[requests.Session], default None
+        requests.sessions.Session instance to be used.
     """
 
     def __init__(
         self,
-        retry_count=3,
-        pause=0.1,
-        timeout=30,
-        session=None,
-        api_key=None,
-        explanationGetFlg=None,
-    ):
-
+        api_key: Optional[str] = None,
+        lang: Optional[str] = None,
+        explanationGetFlg: Optional[str] = None,
+        retry_count: int = 3,
+        pause: float = 0.1,
+        timeout: int = 30,
+        session: Optional[requests.Session] = None,
+    ) -> None:
         super().__init__(
             retry_count=retry_count,
             pause=pause,
@@ -59,82 +89,236 @@ class _eStatReader(_BaseReader):
             session=session,
         )
 
+        # Try to get API key from various sources
         if api_key is None:
-            api_key = os.getenv("ESTAT_API_KEY")
+            api_key = self._get_api_key_from_env()
+        
         if not api_key or not isinstance(api_key, str):
             raise ValueError(
                 "The eStat API key must be provided either "
-                "through the api_key variable or through the "
-                "environment variable ESTAT_API_KEY."
+                "through the api_key variable or through one of the "
+                "following environment variables: "
+                "E_STAT_APPLICATION_ID, ESTAT_APPLICATION_ID, "
+                "E_STAT_APP_ID, ESTAT_APP_ID, "
+                "E_STAT_APPID, ESTAT_APPID, "
+                "E_STAT_API_KEY, ESTAT_API_KEY"
             )
 
         self.api_key = api_key
         self.explanationGetFlg = explanationGetFlg
+        self.lang = lang
 
-    @property
-    def url(self, path="getStatsList"):
-        """API URL"""
-        if path not in [
-            "getStatsList",
-            "getDataCatalog",
-            "getMetaInfo",
-            "getStatsData",
-        ]:
-            path = "getStatsList"
+    def _get_api_key_from_env(self) -> Optional[str]:
+        """
+        Get API key from environment variables or .env files.
+        
+        Returns
+        -------
+        Optional[str]
+            API key if found, None otherwise
+        """
+        # Environment variable names to try in order
+        env_vars = [
+            "E_STAT_APPLICATION_ID",
+            "ESTAT_APPLICATION_ID", 
+            "E_STAT_APP_ID",
+            "ESTAT_APP_ID",
+            "E_STAT_APPID",
+            "ESTAT_APPID",
+            "E_STAT_API_KEY",
+            "ESTAT_API_KEY"
+        ]
+        
+        # First try regular environment variables
+        for var_name in env_vars:
+            api_key = os.getenv(var_name)
+            if api_key:
+                return api_key
+        
+        # If dotenv is available, try loading from .env files
+        if DOTENV_AVAILABLE:
+            env_files = [".estat_env", ".env_estat", ".env"]
+            
+            for env_file in env_files:
+                if Path(env_file).exists():
+                    load_dotenv(env_file)
+                    
+                    # Try all environment variables after loading each file
+                    for var_name in env_vars:
+                        api_key = os.getenv(var_name)
+                        if api_key:
+                            return api_key
+        
+        return None
+
+    def get_url(self, path: str = "getStatsData") -> str:
+        """
+        Get API URL for specified path.
+        
+        Parameters
+        ----------
+        path : str, default "getStatsList"
+            API endpoint path
+            
+        Returns
+        -------
+        str
+            Complete API URL
+        """
+        valid_paths = ["getStatsList", "getDataCatalog", "getMetaInfo", "getStatsData"]
+        if path not in valid_paths:
+            path = "getStatsData"
             print(
-                "pathはgetStatsList, getDataCatalog, getMetaInfo, getStatsDataで指定します。pathをgetStatsListに置換しました。"
+                f"pathは{', '.join(valid_paths)}で指定します。pathをgetStatsDataに置換しました。"
             )
-        eStat_URL = _BASE_URL + f"/{path}?"
-        return eStat_URL
+        return f"{_BASE_URL}/{path}?"
 
-    @property
-    def params(self):
-        """Parameters to use in API calls"""
-        pdict = {
-            "appId": self.sapi_key,
-        }
-
-        params = {
-            "api_key": self.api_key,
-        }
-        paramstring = urllib.parse.urlencode(query=params)
-        url = "{url}{params}".format(url=self.url, params=paramstring)
-        return url
-
-    def rename_japanese(self, df):
-        cols = []
-        for c in df.columns:
-            for k in attrdict.keys():
-                c = c.replace(k, attrdict[k])
-            cols += [c]
-        df.columns = cols
-        return df
+    def colname_to_japanese(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert column names to Japanese using non-destructive assign pattern.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input DataFrame
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with Japanese column names
+        """
+        def convert_column_name(col: str) -> str:
+            for k, v in ATTR_DICT.items():
+                col = col.replace(k, v)
+            return col
+        
+        new_columns = {col: convert_column_name(col) for col in df.columns}
+        return df.rename(columns=new_columns)
 
 
 class StatsListReader(_eStatReader):
+    """
+    Reader for eStat statistics list API.
+    統計表情報取得 API
+    URL: https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_2
+    
+    Parameters
+    ----------
+    api_key : str
+        e-Stat application ID (appId)
+    lang : Optional[str], default None
+        Language for retrieved data. Either "J" (Japanese) or "E" (English).
+    explanationGetFlg : Optional[str], default None
+        Flag for getting explanation data ("Y" or "N")
+        統計表及び、提供統計、提供分類の解説を取得するか否かを指定
+        ・Y：取得する (省略値)
+        ・N：取得しない
+    retry_count : int, default 3
+        Number of times to retry query request
+    pause : float, default 0.1
+        Time, in seconds, of the pause between retries
+    timeout : int, default 300
+        Request timeout in seconds
+    session : Optional[requests.Session], default None
+        requests.sessions.Session instance to be used
+    surveyYears : Optional[Union[str, int]], default None
+        Survey years filter
+        調査年月
+        以下のいずれかの形式で指定
+        ・yyyy：単年検索
+        ・yyyymm：単月検索
+        ・yyyymm-yyyymm：範囲検索
+    openYears : Optional[Union[str, int]], default None
+        Open years filter
+        公開年月
+        調査年月と同様の形式で指定
+        ・yyyy：単年検索
+        ・yyyymm：単月検索
+        ・yyyymm-yyyymm：範囲検索
+    statsField : Optional[Union[str, int]], default None
+        Statistics field filter
+        統計分野
+        以下のいずれかの形式で指定
+        ・数値2桁：統計大分類で検索
+        ・数値4桁：統計小分類で検索
+    statsCode : Optional[Union[str, int]], default None
+        Statistics code filter
+        政府統計コード
+        以下のいずれかの形式で指定
+        ・数値5桁：作成機関で検索
+        ・数値8桁：政府統計コードで検索
+    searchWord : Optional[str], default None
+        Search word filter
+        検索キーワード
+        任意の文字列。表題やメタ情報等に含まれている文字列を検索
+        AND、OR 又は NOT を指定して複数ワードでの検索が可能
+        (東京 AND 人口、東京 OR 大阪 等)
+    searchKind : Optional[int], default None
+        Search kind (1 or 2)
+        検索データ種別
+        検索するデータの種別を指定
+        ・1：統計情報(省略値)
+        ・2：小地域・地域メッシュ
+    collectArea : Optional[int], default None
+        Collection area (1-3)
+        集計地域区分
+        検索するデータの集計地域区分を指定
+        ・1：全国
+        ・2：都道府県
+        ・3：市区町村
+    statsNameList : Optional[str], default None
+        Statistics name list flag ("Y")
+        統計調査名指定
+        統計表情報でなく、統計調査名の一覧を取得する場合に指定
+        ・Y：統計調査名一覧
+        統計調査名一覧を出力。省略時又はY以外の値を設定した場合は統計表情報を出力
+    startPosition : Optional[Union[str, int]], default None
+        Start position for pagination
+        データ取得開始位置
+        データの取得開始位置（1から始まる行番号）を指定。省略時は先頭から取得
+        統計データを複数回に分けて取得する場合等、継続データを取得する開始位置を指定
+        前回受信したデータの<NEXT_KEY>タグの値を指定
+    limit : Optional[Union[str, int]], default None
+        Limit for pagination
+        データ取得件数
+        データの取得行数を指定。省略時は10万件
+        データ件数が指定したlimit値より少ない場合、全件を取得
+        データ件数が指定したlimit値より多い場合（継続データが存在する）は、
+        受信したデータの<NEXT_KEY>タグに継続データの開始行が設定
+    updatedDate : Optional[Union[str, int]], default None
+        Updated date filter
+        更新日付
+        更新日付を指定。指定された期間で更新された統計表の情報を提供
+        以下のいずれかの形式で指定
+        ・yyyy：単年検索
+        ・yyyymm：単月検索
+        ・yyyymmdd：単日検索
+        ・yyyymmdd-yyyymmdd：範囲検索
+    """
     def __init__(
         self,
-        api_key,
-        explanationGetFlg=None,
-        retry_count=3,
-        pause=0.1,
-        timeout=300,
-        session=None,
-        surveyYears=None,
-        openYears=None,
-        statsField=None,
-        statsCode=None,
-        searchWord=None,
-        searchKind=None,
-        collectArea=None,
-        statsNameList=None,
-        startPosition=None,
-        limit=None,
-        updatedDate=None,
-    ):
-
+        api_key: str,
+        lang: Optional[str] = None,
+        explanationGetFlg: Optional[str] = None,
+        retry_count: int = 3,
+        pause: float = 0.1,
+        timeout: int = 300,
+        session: Optional[requests.Session] = None,
+        surveyYears: Optional[Union[str, int]] = None,
+        openYears: Optional[Union[str, int]] = None,
+        statsField: Optional[Union[str, int]] = None,
+        statsCode: Optional[Union[str, int]] = None,
+        searchWord: Optional[str] = None,
+        searchKind: Optional[int] = None,
+        collectArea: Optional[int] = None,
+        statsNameList: Optional[str] = None,
+        startPosition: Optional[Union[str, int]] = None,
+        limit: Optional[Union[str, int]] = None,
+        updatedDate: Optional[Union[str, int]] = None,
+    ) -> None:
         super().__init__(
             api_key=api_key,
+            lang=lang,
             explanationGetFlg=explanationGetFlg,
             retry_count=retry_count,
             pause=pause,
@@ -142,16 +326,6 @@ class StatsListReader(_eStatReader):
             session=session,
         )
 
-        if api_key is None:
-            api_key = os.getenv("ESTAT_API_KEY")
-        if not api_key or not isinstance(api_key, str):
-            raise ValueError(
-                "The eStat API key must be provided either "
-                "through the api_key variable or through the "
-                "environmental variable ESTAT_API_KEY."
-            )
-
-        self.api_key = api_key
         self.surveyYears = surveyYears
         self.openYears = openYears
         self.statsField = statsField
@@ -159,51 +333,40 @@ class StatsListReader(_eStatReader):
         self.searchWord = searchWord
         self.searchKind = searchKind
         self.collectArea = collectArea
-        self.explanationGetFlg = explanationGetFlg
         self.statsNameList = statsNameList
         self.startPosition = startPosition
         self.limit = limit
         self.updatedDate = updatedDate
 
     @property
-    def url(self):
-        """API URL"""
-        StatsList_URL = _BASE_URL + "/getStatsList?"
-        return StatsList_URL
+    def url(self) -> str:
+        """API URL for getStatsList."""
+        return self.get_url("getStatsList")
 
     @property
-    def params(self):
-        """Parameters to use in API calls"""
-        pdict = {
-            "appId": self.api_key,
-        }
+    def params(self) -> Dict[str, Any]:
+        """Parameters to use in API calls."""
+        pdict = {"appId": self.api_key}
 
-        if isinstance(self.surveyYears, (str, int)):
-            pdict.update({"surveyYears": self.surveyYears})
-        if isinstance(self.surveyYears, (str, int)):
-            pdict.update({"surveyYears": self.surveyYears})
-        if isinstance(self.openYears, (str, int)):
-            pdict.update({"openYears": self.openYears})
-        if isinstance(self.statsField, (str, int)):
-            pdict.update({"statsField": self.statsField})
-        if isinstance(self.statsCode, (str, int)):
-            pdict.update({"statsCode": self.statsCode})
-        if isinstance(self.searchWord, str):
-            pdict.update({"searchWord": self.searchWord})
-        if self.searchKind in [1, 2]:
-            pdict.update({"searchKind": self.searchKind})
-        if self.collectArea in range(1, 4):
-            pdict.update({"collectArea": self.collectArea})
-        if self.explanationGetFlg in ["Y", "N"]:
-            pdict.update({"explanationGetFlg": self.explanationGetFlg})
-        if self.statsNameList == "Y":
-            pdict.update({"statsNameList": self.statsNameList})
-        if isinstance(self.startPosition, (str, int)):
-            pdict.update({"startPosition": self.startPosition})
-        if isinstance(self.limit, (str, int)):
-            pdict.update({"limit": self.limit})
-        if isinstance(self.updatedDate, (str, int)):
-            pdict.update({"updatedDate": self.updatedDate})
+        # Add parameters if they are set and valid
+        param_mappings = [
+            ("surveyYears", self.surveyYears, lambda x: isinstance(x, (str, int))),
+            ("openYears", self.openYears, lambda x: isinstance(x, (str, int))),
+            ("statsField", self.statsField, lambda x: isinstance(x, (str, int))),
+            ("statsCode", self.statsCode, lambda x: isinstance(x, (str, int))),
+            ("searchWord", self.searchWord, lambda x: isinstance(x, str)),
+            ("searchKind", self.searchKind, lambda x: x in [1, 2]),
+            ("collectArea", self.collectArea, lambda x: x in range(1, 4)),
+            ("explanationGetFlg", self.explanationGetFlg, lambda x: x in ["Y", "N"]),
+            ("statsNameList", self.statsNameList, lambda x: x == "Y"),
+            ("startPosition", self.startPosition, lambda x: isinstance(x, (str, int))),
+            ("limit", self.limit, lambda x: isinstance(x, (str, int))),
+            ("updatedDate", self.updatedDate, lambda x: isinstance(x, (str, int))),
+        ]
+
+        for param_name, param_value, validator in param_mappings:
+            if param_value is not None and validator(param_value):
+                pdict[param_name] = param_value
 
         return pdict
 
@@ -214,79 +377,108 @@ class StatsListReader(_eStatReader):
         finally:
             self.close()
 
-    def _read_one_data(self, url, params):
-        """read one data from specified URL"""
-        print(url)
+    def _read_one_data(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Read one data from specified URL.
+        
+        Parameters
+        ----------
+        url : str
+            Target URL
+        params : Dict[str, Any]
+            Request parameters
+            
+        Returns
+        -------
+        pd.DataFrame
+            Processed statistics list data
+        """
         out = self._get_response(url, params=params).json()
 
-        if "RESULT" in out["GET_STATS_LIST"].keys():
-            if "STATUS" in out["GET_STATS_LIST"]["RESULT"].keys():
-                self.STATUS = out["GET_STATS_LIST"]["RESULT"]["STATUS"]
-            if "ERROR_MSG" in out["GET_STATS_LIST"]["RESULT"].keys():
-                self.ERROR_MSG = out["GET_STATS_LIST"]["RESULT"]["ERROR_MSG"]
-            if "DATE" in out["GET_STATS_LIST"]["RESULT"].keys():
-                self.DATE = out["GET_STATS_LIST"]["RESULT"]["DATE"]
-        if "PARAMETER" in out["GET_STATS_LIST"].keys():
-            if "LANG" in out["GET_STATS_LIST"]["PARAMETER"].keys():
-                self.LANG = out["GET_STATS_LIST"]["PARAMETER"]["LANG"]
-            if "DATA_FORMAT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
-                self.DATA_FORMAT = out["GET_STATS_LIST"]["PARAMETER"]["DATA_FORMAT"]
-        if "LIMIT" in out["GET_STATS_LIST"]["PARAMETER"].keys():
-            self.LIMIT = out["GET_STATS_LIST"]["PARAMETER"]["LIMIT"]
-        if "DATALIST_INF" in out["GET_STATS_LIST"].keys():
-            if "NUMBER" in out["GET_STATS_LIST"]["DATALIST_INF"].keys():
-                self.NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"]["NUMBER"]
-            if "RESULT_INF" in out["GET_STATS_LIST"]["DATALIST_INF"].keys():
-                if (
-                    "FROM_NUMBER"
-                    in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys()
-                ):
-                    self.FROM_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"][
-                        "RESULT_INF"
-                    ]["FROM_NUMBER"]
-                if (
-                    "TO_NUMBER"
-                    in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys()
-                ):
-                    self.TO_NUMBER = out["GET_STATS_LIST"]["DATALIST_INF"][
-                        "RESULT_INF"
-                    ]["TO_NUMBER"]
-                if (
-                    "NEXT_KEY"
-                    in out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"].keys()
-                ):
-                    self.NEXT_KEY = out["GET_STATS_LIST"]["DATALIST_INF"]["RESULT_INF"][
-                        "NEXT_KEY"
-                    ]
+        # Store response metadata as instance attributes
+        response_data = out.get("GET_STATS_LIST", {})
+        self._store_response_metadata(response_data)
 
-        TABLE_INF = pd.json_normalize(
+        # Extract and process table information
+        table_inf = pd.json_normalize(
             out, record_path=["GET_STATS_LIST", "DATALIST_INF", "TABLE_INF"], sep="_"
         )
-        TABLE_INF.columns = list(
-            map(
-                lambda x: x.replace("@", "").rstrip("_$"),
-                TABLE_INF.columns.values.tolist(),
-            )
-        )
+        
+        # Clean column names
+        table_inf = table_inf.assign(**{
+            col.replace("@", "").rstrip("_$"): table_inf[col] 
+            for col in table_inf.columns
+        }).drop(columns=table_inf.columns.tolist())
 
-        return TABLE_INF
+        return table_inf
+    
+    def _store_response_metadata(self, response_data: Dict[str, Any]) -> None:
+        """Store response metadata as instance attributes."""
+        # Store RESULT metadata
+        result = response_data.get("RESULT", {})
+        self.STATUS = result.get("STATUS")
+        self.ERROR_MSG = result.get("ERROR_MSG")
+        self.DATE = result.get("DATE")
+
+        # Store PARAMETER metadata
+        parameter = response_data.get("PARAMETER", {})
+        self.LANG = parameter.get("LANG")
+        self.DATA_FORMAT = parameter.get("DATA_FORMAT")
+        self.LIMIT = parameter.get("LIMIT")
+
+        # Store DATALIST_INF metadata
+        datalist_inf = response_data.get("DATALIST_INF", {})
+        self.NUMBER = datalist_inf.get("NUMBER")
+        
+        result_inf = datalist_inf.get("RESULT_INF", {})
+        self.FROM_NUMBER = result_inf.get("FROM_NUMBER")
+        self.TO_NUMBER = result_inf.get("TO_NUMBER")
+        self.NEXT_KEY = result_inf.get("NEXT_KEY")
 
 
 class MetaInfoReader(_eStatReader):
+    """
+    Reader for eStat metadata API.
+    メタ情報取得 API
+    https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_3
+    
+    Parameters
+    ----------
+    api_key : str
+        e-Stat application ID (appId)
+    statsDataId : Union[str, int]
+        Statistics data ID
+    name_or_id : str, default "name"
+        Whether to use "name" or "id" for column naming
+    lvhierarchy : bool, default False
+        Whether to create hierarchy levels
+    lvfillna : bool, default False
+        Whether to fill NA values in hierarchy levels
+    explanationGetFlg : Optional[str], default None
+        Flag for getting explanation data ("Y" or "N")
+    retry_count : int, default 3
+        Number of times to retry query request
+    pause : float, default 0.1
+        Time, in seconds, of the pause between retries
+    timeout : int, default 30
+        Request timeout in seconds
+    session : Optional[requests.Session], default None
+        requests.sessions.Session instance to be used
+    """
+
     def __init__(
         self,
-        api_key,
-        statsDataId,
-        name_or_id="name",
-        lvhierarchy=False,
-        lvfillna=False,
-        explanationGetFlg=None,
-        retry_count=3,
-        pause=0.1,
-        timeout=30,
-        session=None,
-    ):
-
+        api_key: str,
+        statsDataId: Union[str, int],
+        name_or_id: str = "name",
+        lvhierarchy: bool = False,
+        lvfillna: bool = False,
+        explanationGetFlg: Optional[str] = None,
+        retry_count: int = 3,
+        pause: float = 0.1,
+        timeout: int = 30,
+        session: Optional[requests.Session] = None,
+    ) -> None:
         super().__init__(
             api_key=api_key,
             explanationGetFlg=explanationGetFlg,
@@ -296,41 +488,28 @@ class MetaInfoReader(_eStatReader):
             session=session,
         )
 
-        if api_key is None:
-            api_key = os.getenv("ESTAT_API_KEY")
-        if not api_key or not isinstance(api_key, str):
-            raise ValueError(
-                "The eStat API key must be provided either "
-                "through the api_key variable or through the "
-                "environmental variable ESTAT_API_KEY."
-            )
-
-        self.api_key = api_key
         self.statsDataId = statsDataId
         self.name_or_id = name_or_id
         self.lvhierarchy = lvhierarchy
         self.lvfillna = lvfillna
-        self.explanationGetFlg = explanationGetFlg
 
     @property
-    def url(self):
-        """API URL"""
-        MetaInfo_URL = _BASE_URL + "/getMetaInfo?"
-        return MetaInfo_URL
+    def url(self) -> str:
+        """API URL for getMetaInfo."""
+        return self.get_url("getMetaInfo")
 
     @property
-    def params(self):
-        """Parameters to use in API calls"""
-        pdict = {
-            "appId": self.api_key,
-        }
+    def params(self) -> Dict[str, Any]:
+        """Parameters to use in API calls."""
+        pdict = {"appId": self.api_key}
 
         if isinstance(self.statsDataId, (str, int)):
-            pdict.update({"statsDataId": self.statsDataId})
+            pdict["statsDataId"] = self.statsDataId
         if self.explanationGetFlg in ["Y", "N"]:
-            pdict.update({"explanationGetFlg": self.explanationGetFlg})
+            pdict["explanationGetFlg"] = self.explanationGetFlg
 
         return pdict
+    
 
     def read(self):
         """Read data from connector"""
@@ -339,172 +518,292 @@ class MetaInfoReader(_eStatReader):
         finally:
             self.close()
 
-    def _read_one_data(self, url, params):
-        """read one data from specified URL"""
+    def _read_one_data(self, url: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Read metadata from specified URL.
+        
+        Parameters
+        ----------
+        url : str
+            Target URL
+        params : Dict[str, Any]
+            Request parameters
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Processed metadata information
+        """
         out = self._get_response(url, params=params).json()
 
-        self.STATUS = out["GET_META_INFO"]["RESULT"]["STATUS"]
-        self.ERROR_MSG = out["GET_META_INFO"]["RESULT"]["ERROR_MSG"]
-        self.DATE = out["GET_META_INFO"]["RESULT"]["DATE"]
-        if "PARAMETER" in out["GET_META_INFO"].keys():
-            if "LANG" in out["GET_META_INFO"]["PARAMETER"].keys():
-                self.LANG = out["GET_META_INFO"]["PARAMETER"]["LANG"]
-            if "DATA_FORMAT" in out["GET_META_INFO"]["PARAMETER"].keys():
-                self.DATA_FORMAT = out["GET_META_INFO"]["PARAMETER"]["DATA_FORMAT"]
-        if "METADATA_INF" in out["GET_META_INFO"].keys():
-            if "TABLE_INF" in out["GET_META_INFO"]["METADATA_INF"].keys():
-                self.TABLE_INF = out["GET_META_INFO"]["METADATA_INF"]["TABLE_INF"]
-                if "STAT_NAME" in self.TABLE_INF.keys():
-                    self.STAT_NAME = self.TABLE_INF["STAT_NAME"]
-                if "GOV_ORG" in self.TABLE_INF.keys():
-                    self.GOV_ORG = self.TABLE_INF["GOV_ORG"]
-                if "STATISTICS_NAME" in self.TABLE_INF.keys():
-                    self.STATISTICS_NAME = self.TABLE_INF["STATISTICS_NAME"]
-                if "TITLE" in self.TABLE_INF.keys():
-                    self.TITLE = self.TABLE_INF["TITLE"]
-                if "CYCLE" in self.TABLE_INF.keys():
-                    self.CYCLE = self.TABLE_INF["CYCLE"]
-                if "SURVEY_DATE" in self.TABLE_INF.keys():
-                    self.SURVEY_DATE = self.TABLE_INF["SURVEY_DATE"]
-                if "OPEN_DATE" in self.TABLE_INF.keys():
-                    self.OPEN_DATE = self.TABLE_INF["OPEN_DATE"]
-                if "SMALL_AREA" in self.TABLE_INF.keys():
-                    self.SMALL_AREA = self.TABLE_INF["SMALL_AREA"]
-                if "COLLECT_AREA" in self.TABLE_INF.keys():
-                    self.COLLECT_AREA = self.TABLE_INF["COLLECT_AREA"]
-                if "MAIN_CATEGORY" in self.TABLE_INF.keys():
-                    self.MAIN_CATEGORY = self.TABLE_INF["MAIN_CATEGORY"]
-                if "SUB_CATEGORY" in self.TABLE_INF.keys():
-                    self.SUB_CATEGORY = self.TABLE_INF["SUB_CATEGORY"]
-                if "OVERALL_TOTAL_NUMBER" in self.TABLE_INF.keys():
-                    self.OVERALL_TOTAL_NUMBER = self.TABLE_INF["OVERALL_TOTAL_NUMBER"]
-                if "UPDATED_DATE" in self.TABLE_INF.keys():
-                    self.UPDATED_DATE = self.TABLE_INF["UPDATED_DATE"]
-                if "STATISTICS_NAME_SPEC" in self.TABLE_INF.keys():
-                    self.STATISTICS_NAME_SPEC = self.TABLE_INF["STATISTICS_NAME_SPEC"]
-                if "TABULATION_SUB_CATEGORY1" in self.TABLE_INF.keys():
-                    self.TABULATION_SUB_CATEGORY1 = self.TABLE_INF[
-                        "TABULATION_SUB_CATEGORY1"
-                    ]
-                if "DESCRIPTION" in self.TABLE_INF.keys():
-                    self.DESCRIPTION = self.TABLE_INF["DESCRIPTION"]
-                if "TITLE_SPEC" in self.TABLE_INF.keys():
-                    self.TITLE_SPEC = self.TABLE_INF["TITLE_SPEC"]
+        # Store response metadata
+        meta_info = out.get("GET_META_INFO", {})
+        self._store_metadata_attributes(meta_info)
 
-        self.CLASS_OBJ = out["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"]
+        # Process class objects
+        class_obj = meta_info.get("METADATA_INF", {}).get("CLASS_INF", {}).get("CLASS_OBJ", [])
+        return self._process_class_objects(class_obj)
 
+    def _store_metadata_attributes(self, meta_info: Dict[str, Any]) -> None:
+        """Store metadata attributes as instance variables."""
+        result = meta_info.get("RESULT", {})
+        self.STATUS = result.get("STATUS")
+        self.ERROR_MSG = result.get("ERROR_MSG")
+        self.DATE = result.get("DATE")
+
+        parameter = meta_info.get("PARAMETER", {})
+        self.LANG = parameter.get("LANG")
+        self.DATA_FORMAT = parameter.get("DATA_FORMAT")
+
+        # Store table information
+        table_inf = meta_info.get("METADATA_INF", {}).get("TABLE_INF", {})
+        self.TABLE_INF = table_inf
+        
+        # Store individual table attributes
+        table_attributes = [
+            "STAT_NAME", "GOV_ORG", "STATISTICS_NAME", "TITLE", "CYCLE",
+            "SURVEY_DATE", "OPEN_DATE", "SMALL_AREA", "COLLECT_AREA",
+            "MAIN_CATEGORY", "SUB_CATEGORY", "OVERALL_TOTAL_NUMBER",
+            "UPDATED_DATE", "STATISTICS_NAME_SPEC", "TABULATION_SUB_CATEGORY1",
+            "DESCRIPTION", "TITLE_SPEC"
+        ]
+        
+        for attr in table_attributes:
+            setattr(self, attr, table_inf.get(attr))
+
+
+    def _process_class_objects(self, class_obj: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Process class objects into DataFrames.
+        
+        Parameters
+        ----------
+        class_obj : List[Dict[str, Any]]
+            List of class objects from metadata
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary of processed class DataFrames
+        """
         dfs = {}
-        if isinstance(self.CLASS_OBJ, list):
-            for co in self.CLASS_OBJ:
-                CLASS = co["CLASS"]
-                if isinstance(CLASS, list):
-                    CLASS = pd.DataFrame(co["CLASS"])
-                elif isinstance(CLASS, dict):
-                    CLASS = pd.DataFrame(pd.Series(co["CLASS"])).T
-                else:
-                    print(co["@name"] + "はlist型でもdict型でもありません。")
-                CLASS.columns = list(
-                    map(lambda x: x.lstrip("@"), CLASS.columns.values.tolist())
-                )
-
-                is_hierarchy = self.lvhierarchy & (len(CLASS["level"].unique()) > 1)
-                if is_hierarchy:
-                    levels = self.hierarchy_level(CLASS, co["@id"])
-
-                if self.name_or_id == "name":
-                    CLASS.columns = list(
-                        map(lambda x: co["@name"] + x, CLASS.columns.values.tolist())
-                    )
-                    CLASS = self.rename_japanese(CLASS)
-                else:
-                    CLASS.columns = list(
-                        map(
-                            lambda x: co["@id"] + "_" + x, CLASS.columns.values.tolist()
-                        )
-                    )
-
-                if is_hierarchy:
-                    dfs[co["@id"]] = [CLASS, levels]
-                else:
-                    dfs[co["@id"]] = CLASS
-
-        else:
+        
+        if not isinstance(class_obj, list):
             print("CLASS_OBJはlist型ではありません。")
+            return dfs
+
+        for co in class_obj:
+            class_data = co.get("CLASS")
+            class_df = self._create_class_dataframe(class_data, co)
+            
+            if class_df is None:
+                continue
+                
+            # Check if hierarchy processing is needed
+            is_hierarchy = self.lvhierarchy and len(class_df["level"].unique()) > 1
+            
+            if is_hierarchy:
+                levels = self.create_hierarchy_levels(class_df, co["@id"])
+                dfs[co["@id"]] = [class_df, levels]
+            else:
+                dfs[co["@id"]] = class_df
 
         return dfs
 
-    def hierarchy_level(self, df, id):
-        levels = df[df["level"] == "1"][["code"]]
-        levels.columns = ["level1"]
-        for lv in np.sort(df["level"].unique().astype(int))[1:]:
-            child = df[df["level"] == str(lv)][["parentCode", "code"]]
-            child.columns = ["level" + str(lv - 1), "level" + str(lv)]
-            levels = levels.merge(child, on="level" + str(lv - 1), how="left")
-        if self.lvfillna:
-            levels = levels.fillna(method="ffill", axis=1)
-        levels.columns = list(
-            map(lambda x: id + "_" + x, levels.columns.values.tolist())
+
+    def _create_class_dataframe(
+        self, 
+        class_data: Union[List[Dict], Dict], 
+        class_obj: Dict[str, Any]
+    ) -> Optional[pd.DataFrame]:
+        """
+        Create DataFrame from class data.
+        
+        Parameters
+        ----------
+        class_data : Union[List[Dict], Dict]
+            Class data from API response
+        class_obj : Dict[str, Any]
+            Class object metadata
+            
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            Processed class DataFrame or None if invalid
+        """
+        if isinstance(class_data, list):
+            class_df = pd.DataFrame(class_data)
+        elif isinstance(class_data, dict):
+            class_df = pd.DataFrame(pd.Series(class_data)).T
+        else:
+            print(f"{class_obj['@name']}はlist型でもdict型でもありません。")
+            return None
+
+        # Clean column names
+        class_df = class_df.assign(**{
+            col.lstrip("@"): class_df[col] for col in class_df.columns
+        }).drop(columns=class_df.columns.tolist())
+
+        # Apply naming convention
+        if self.name_or_id == "name":
+            class_df = class_df.assign(**{
+                f"{class_obj['@name']}{col}": class_df[col] 
+                for col in class_df.columns
+            }).drop(columns=class_df.columns.tolist())
+            class_df = self.colname_to_japanese(class_df)
+        else:
+            class_df = class_df.assign(**{
+                f"{class_obj['@id']}_{col}": class_df[col] 
+                for col in class_df.columns
+            }).drop(columns=class_df.columns.tolist())
+
+        return class_df
+    
+
+    def create_hierarchy_dataframe(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
+        """
+        Create hierarchy level DataFrame.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Class DataFrame with hierarchy information
+        class_id : str
+            Class ID for column naming
+            
+        Returns
+        -------
+        pd.DataFrame
+            Hierarchy levels DataFrame
+        """
+        # Extract target category metadata from stored metadata
+        class_obj = None
+        for co in self.CLASS_OBJ:
+            if co["@id"] == class_id:
+                class_obj = co
+                break
+        
+        if class_obj is None:
+            raise ValueError(f"Class ID {class_id} not found in metadata")
+        
+        # Create the hierarchy dataframe using the utility function
+        from jpy_datareader.estat import create_hierarchy_dataframe
+        
+        # Prepare metainfo structure for the utility function
+        metainfo = {
+            "GET_META_INFO": {
+                "METADATA_INF": {
+                    "CLASS_INF": {
+                        "CLASS_OBJ": [class_obj]
+                    }
+                }
+            }
+        }
+        
+        return create_hierarchy_dataframe(metainfo, 0)
+
+    def create_hierarchy_levels(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
+        """
+        Create hierarchy level DataFrame.
+        
+        .. deprecated:: 
+            This method is deprecated. Use create_hierarchy_dataframe instead.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Class DataFrame with hierarchy information
+        class_id : str
+            Class ID for column naming
+            
+        Returns
+        -------
+        pd.DataFrame
+            Hierarchy levels DataFrame
+        """
+        warnings.warn(
+            "create_hierarchy_levels is deprecated. Use create_hierarchy_dataframe instead.",
+            DeprecationWarning,
+            stacklevel=2
         )
-        return levels
+        return self.create_hierarchy_dataframe(df, class_id)
 
 
 class StatsDataReader(_eStatReader):
     """
-    Get data for the given name from eStat.
+    Reader for eStat statistics data API.
+    統計データ取得 API
+    https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_4
 
-    .. versionadded:: 3.0
-
+    
     Parameters
     ----------
-    api_key : str, optional
-        eStat API key.
-        取得したアプリケーションID(appId)を指定.
-    name_or_id : "name" or "id"
+    api_key : str
+        e-Stat application ID (appId)
+    statsDataId : Union[str, int]
+        Statistics data ID
+    name_or_id : str, default "name"
+        Whether to use "name" or "id" for column naming
+    explanationGetFlg : Optional[str], default None
+        Flag for getting explanation data ("Y" or "N")
+    retry_count : int, default 3
+        Number of times to retry query request
+    pause : float, default 0.1
+        Time, in seconds, of the pause between retries
+    timeout : int, default 30
+        Request timeout in seconds
+    session : Optional[requests.Session], default None
+        requests.sessions.Session instance to be used
+    Various filter parameters for data selection (lvTab, cdTab, etc.)
+    limit : int, default 100000
+        Limit for pagination
+    na_values : Any, default np.nan
+        Value to use for missing data
     """
 
     def __init__(
         self,
-        api_key,
-        statsDataId,
-        name_or_id="name",
-        explanationGetFlg=None,
-        retry_count=3,
-        pause=0.1,
-        timeout=30,
-        session=None,
-        lvTab=None,
-        cdTab=None,
-        cdTabFrom=None,
-        cdTabTo=None,
-        lvTime=None,
-        cdTime=None,
-        cdTimeFrom=None,
-        cdTimeTo=None,
-        lvArea=None,
-        cdArea=None,
-        cdAreaFrom=None,
-        cdAreaTo=None,
-        lvCat01=None,
-        cdCat01=None,
-        cdCat01From=None,
-        cdCat01To=None,
-        lvCat02=None,
-        cdCat02=None,
-        cdCat02From=None,
-        cdCat02To=None,
-        lvCat03=None,
-        cdCat03=None,
-        cdCat03From=None,
-        cdCat03To=None,
-        startPosition=None,
-        limit=100000,
-        metaGetFlg=None,
-        cntGetFlg=None,
-        annotationGetFlg=None,
-        replaceSpChar=2,
-        na_values=np.nan,
-    ):
-
+        api_key: str,
+        statsDataId: Union[str, int],
+        name_or_id: str = "name",
+        explanationGetFlg: Optional[str] = None,
+        retry_count: int = 3,
+        pause: float = 0.1,
+        timeout: int = 30,
+        session: Optional[requests.Session] = None,
+        # Filter parameters
+        lvTab: Optional[Union[str, int]] = None,
+        cdTab: Optional[Union[str, int]] = None,
+        cdTabFrom: Optional[Union[str, int]] = None,
+        cdTabTo: Optional[Union[str, int]] = None,
+        lvTime: Optional[Union[str, int]] = None,
+        cdTime: Optional[Union[str, int]] = None,
+        cdTimeFrom: Optional[Union[str, int]] = None,
+        cdTimeTo: Optional[Union[str, int]] = None,
+        lvArea: Optional[Union[str, int]] = None,
+        cdArea: Optional[Union[str, int]] = None,
+        cdAreaFrom: Optional[Union[str, int]] = None,
+        cdAreaTo: Optional[Union[str, int]] = None,
+        lvCat01: Optional[Union[str, int]] = None,
+        cdCat01: Optional[Union[str, int]] = None,
+        cdCat01From: Optional[Union[str, int]] = None,
+        cdCat01To: Optional[Union[str, int]] = None,
+        lvCat02: Optional[Union[str, int]] = None,
+        cdCat02: Optional[Union[str, int]] = None,
+        cdCat02From: Optional[Union[str, int]] = None,
+        cdCat02To: Optional[Union[str, int]] = None,
+        lvCat03: Optional[Union[str, int]] = None,
+        cdCat03: Optional[Union[str, int]] = None,
+        cdCat03From: Optional[Union[str, int]] = None,
+        cdCat03To: Optional[Union[str, int]] = None,
+        startPosition: Optional[Union[str, int]] = None,
+        limit: int = 100000,
+        metaGetFlg: Optional[str] = None,
+        cntGetFlg: Optional[str] = None,
+        annotationGetFlg: Optional[str] = None,
+        replaceSpChar: int = 2,
+        na_values: Any = np.nan,
+    ) -> None:
         super().__init__(
             api_key=api_key,
             explanationGetFlg=explanationGetFlg,
@@ -514,454 +813,596 @@ class StatsDataReader(_eStatReader):
             session=session,
         )
 
-        if api_key is None:
-            api_key = os.getenv("ESTAT_API_KEY")
-        if not api_key or not isinstance(api_key, str):
-            raise ValueError(
-                "The eStat API key must be provided either "
-                "through the api_key variable or through the "
-                "environmental variable ESTAT_API_KEY."
-            )
-
-        self.api_key = api_key
-        self.name_or_id = name_or_id
         self.statsDataId = statsDataId
-        self.lvTab = lvTab
-        self.cdTab = cdTab
-        self.cdTabFrom = cdTabFrom
-        self.cdTabTo = cdTabTo
-        self.lvTime = lvTime
-        self.cdTime = cdTime
-        self.cdTimeFrom = cdTimeFrom
-        self.cdTimeTo = cdTimeTo
-        self.lvArea = lvArea
-        self.cdArea = cdArea
-        self.cdAreaFrom = cdAreaFrom
-        self.cdAreaTo = cdAreaTo
-        self.lvCat01 = lvCat01
-        self.cdCat01 = cdCat01
-        self.cdCat01From = cdCat01From
-        self.cdCat01To = cdCat01To
-        self.lvCat02 = lvCat02
-        self.cdCat02 = cdCat02
-        self.cdCat02From = cdCat02From
-        self.cdCat02To = cdCat02To
-        self.lvCat03 = lvCat03
-        self.cdCat03 = cdCat03
-        self.cdCat03From = cdCat03From
-        self.cdCat03To = cdCat03To
+        self.name_or_id = name_or_id
+        
+        # Store all filter parameters
+        self.filter_params = {
+            "lvTab": lvTab, "cdTab": cdTab, "cdTabFrom": cdTabFrom, "cdTabTo": cdTabTo,
+            "lvTime": lvTime, "cdTime": cdTime, "cdTimeFrom": cdTimeFrom, "cdTimeTo": cdTimeTo,
+            "lvArea": lvArea, "cdArea": cdArea, "cdAreaFrom": cdAreaFrom, "cdAreaTo": cdAreaTo,
+            "lvCat01": lvCat01, "cdCat01": cdCat01, "cdCat01From": cdCat01From, "cdCat01To": cdCat01To,
+            "lvCat02": lvCat02, "cdCat02": cdCat02, "cdCat02From": cdCat02From, "cdCat02To": cdCat02To,
+            "lvCat03": lvCat03, "cdCat03": cdCat03, "cdCat03From": cdCat03From, "cdCat03To": cdCat03To,
+        }
+        
         self.startPosition = startPosition
         self.limit = limit
         self.metaGetFlg = metaGetFlg
         self.cntGetFlg = cntGetFlg
-        self.explanationGetFlg = explanationGetFlg
         self.annotationGetFlg = annotationGetFlg
         self.replaceSpChar = replaceSpChar
         self.na_values = na_values
 
     @property
-    def url(self):
-        """API URL"""
-        StatsList_URL = _BASE_URL + "/getStatsData?"
-        return StatsList_URL
+    def url(self) -> str:
+        """API URL for getStatsData."""
+        return self.get_url("getStatsData")
 
     @property
-    def params(self):
-        """Parameters to use in API calls"""
-        pdict = {
-            "appId": self.api_key,
-        }
+    def params(self) -> Dict[str, Any]:
+        """Parameters to use in API calls."""
+        pdict = {"appId": self.api_key}
 
+        # Add statsDataId
         if isinstance(self.statsDataId, (str, int)):
-            pdict.update({"statsDataId": self.statsDataId})
-        # 表章事項
-        if isinstance(self.lvTab, (str, int)):
-            pdict.update({"lvTab": self.lvTab})
-        if isinstance(self.cdTab, (str, int)):
-            pdict.update({"cdTab": self.cdTab})
-        if isinstance(self.cdTabFrom, (str, int)):
-            pdict.update({"cdTabFrom": self.cdTabFrom})
-        if isinstance(self.cdTabTo, (str, int)):
-            pdict.update({"cdTabTo": self.cdTabTo})
-        # 時間軸事項
-        if isinstance(self.lvTime, (str, int)):
-            pdict.update({"lvTime": self.lvAlvTimerea})
-        if isinstance(self.cdTime, (str, int)):
-            pdict.update({"cdTime": self.cdTime})
-        if isinstance(self.cdTimeFrom, (str, int)):
-            pdict.update({"cdTimeFrom": self.cdTimeFrom})
-        if isinstance(self.cdTimeTo, (str, int)):
-            pdict.update({"cdTimeTo": self.cdTimeTo})
-        # 地域事項
-        if isinstance(self.lvArea, (str, int)):
-            pdict.update({"lvArea": self.lvArea})
-        if isinstance(self.cdArea, (str, int)):
-            pdict.update({"cdArea": self.cdArea})
-        if isinstance(self.cdAreaFrom, (str, int)):
-            pdict.update({"cdAreaFrom": self.cdAreaFrom})
-        if isinstance(self.cdAreaTo, (str, int)):
-            pdict.update({"cdAreaTo": self.cdAreaTo})
-        # 分類事項
-        if isinstance(self.lvCat01, (str, int)):
-            pdict.update({"lvCat01": self.lvCat01})
-        if isinstance(self.cdCat01, (str, int)):
-            pdict.update({"cdCat01": self.cdCat01})
-        if isinstance(self.cdCat01From, (str, int)):
-            pdict.update({"cdCat01From": self.cdCat01From})
-        if isinstance(self.cdCat01To, (str, int)):
-            pdict.update({"cdCat01To": self.cdCat01To})
-        if isinstance(self.lvCat02, (str, int)):
-            pdict.update({"lvCat02": self.lvCat02})
-        if isinstance(self.cdCat02, (str, int)):
-            pdict.update({"cdCat02": self.cdCat02})
-        if isinstance(self.cdCat02From, (str, int)):
-            pdict.update({"cdCat02From": self.cdCat02From})
-        if isinstance(self.cdCat02To, (str, int)):
-            pdict.update({"cdCat02To": self.cdCat02To})
-        if isinstance(self.lvCat03, (str, int)):
-            pdict.update({"lvCat03": self.lvCat03})
-        if isinstance(self.cdCat03, (str, int)):
-            pdict.update({"cdCat03": self.cdCat03})
-        if isinstance(self.cdCat03From, (str, int)):
-            pdict.update({"cdCat03From": self.cdCat03From})
-        if isinstance(self.cdCat03To, (str, int)):
-            pdict.update({"cdCat03To": self.cdCat03To})
-        # データ取得開始位置
+            pdict["statsDataId"] = self.statsDataId
+
+        # Add filter parameters
+        for param_name, param_value in self.filter_params.items():
+            if isinstance(param_value, (str, int)):
+                pdict[param_name] = param_value
+
+        # Add other parameters
         if isinstance(self.startPosition, (str, int)):
-            pdict.update({"startPosition": self.startPosition})
+            pdict["startPosition"] = self.startPosition
         if isinstance(self.limit, (str, int)):
-            pdict.update({"limit": self.limit})
-        # メタ情報有無
+            pdict["limit"] = self.limit
         if self.metaGetFlg in ["Y", "N"]:
-            pdict.update({"metaGetFlg": self.metaGetFlg})
-        # 件数取得フラグ
+            pdict["metaGetFlg"] = self.metaGetFlg
         if self.cntGetFlg in ["Y", "N"]:
-            pdict.update({"cntGetFlg": self.cntGetFlg})
+            pdict["cntGetFlg"] = self.cntGetFlg
         if self.explanationGetFlg in ["Y", "N"]:
-            pdict.update({"explanationGetFlg": self.explanationGetFlg})
+            pdict["explanationGetFlg"] = self.explanationGetFlg
         if self.annotationGetFlg in ["Y", "N"]:
-            pdict.update({"annotationGetFlg": self.annotationGetFlg})
+            pdict["annotationGetFlg"] = self.annotationGetFlg
         if self.replaceSpChar in range(4):
-            pdict.update({"replaceSpChar": self.replaceSpChar})
+            pdict["replaceSpChar"] = self.replaceSpChar
+
         return pdict
 
-    def read(self, normal=True, split_units=False):
-        """Read data from connector"""
+    def read(self, normal: bool = True, split_units: bool = False) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+        """
+        Read data from connector.
+        
+        Parameters
+        ----------
+        normal : bool, default True
+            Whether to return normalized data
+        split_units : bool, default False
+            Whether to split data by units
+            
+        Returns
+        -------
+        Union[pd.DataFrame, Dict[str, pd.DataFrame]]
+            Statistics data as DataFrame or dictionary of DataFrames
+        """
         try:
             data = self._read(self.url, self.params)
             if normal:
                 return data
             else:
-
-                def denormalization(input, header):
-                    if header == "name":
-                        df = input.drop(
-                            [
-                                c
-                                for c in input.columns
-                                if (
-                                    ("コード" in c)
-                                    | ("階層レベル" in c)
-                                    | ("unit" in c)
-                                    | ("単位" in c)
-                                    | ("親コード" in c)
-                                    | ("追加情報" in c)
-                                )
-                            ],
-                            axis=1,
-                        )
-                    else:
-                        df = input.drop(
-                            [
-                                c
-                                for c in input.columns
-                                if (
-                                    ("code" in c)
-                                    | ("level" in c)
-                                    | ("unit" in c)
-                                    | ("parentCode" in c)
-                                    | ("addInf" in c)
-                                )
-                            ],
-                            axis=1,
-                        )
-
-                    if self.tabcol in df.index.names:
-                        if header == "name":
-                            df = df.set_index([c for c in df.columns if "名" in c])
-                        else:
-                            df = df.set_index([c for c in df.columns if "name" in c])
-                        df = df.unstack(self.tabcol)
-                        df.columns = [l2 for l1, l2 in df.columns]
-                        df = df.reset_index()
-
-                    df.columns = list(
-                        map(
-                            lambda x: x.replace("_name", "").rstrip("名"),
-                            df.columns.values.tolist(),
-                        )
-                    )
-                    return df
-
                 if split_units:
-                    if "単位コード" in data.columns:
-                        data["単位コード"] = data["単位コード"].fillna("単位なし")
-                        data.rename(columns={"単位コード": "unit"}, inplace=True)
-                    elif "unit_code" in data.columns:
-                        data["unit_code"] = data["unit_code"].fillna("単位なし")
-                        data.rename(columns={"unit_code": "unit"}, inplace=True)
-
-                    datasets = {}
-                    for u in data["unit"].unique():
-                        df = data[data["unit"] == u]
-                        datasets[u] = denormalization(df, self.name_or_id)
-                    return datasets
+                    return self._split_by_units(data)
                 else:
-                    return denormalization(data, self.name_or_id)
-
+                    return self._denormalize_data(data)
         finally:
             self.close()
 
-    def _read(self, url, params):
+    def _read(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Read data with automatic pagination handling.
+        
+        Parameters
+        ----------
+        url : str
+            Target URL
+        params : Dict[str, Any]
+            Request parameters
+            
+        Returns
+        -------
+        pd.DataFrame
+            Combined statistics data
+        """
         if self.limit is None:
-            out = self._get_response(url, params=dict(**params, **{"limit": 1})).json()
-            OVERALL_TOTAL_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"][
-                "TABLE_INF"
-            ]["OVERALL_TOTAL_NUMBER"]
-
-            if OVERALL_TOTAL_NUMBER > 100000:
-                ptrans = {
-                    "tab": "cdTab",
-                    "time": "cdTime",
-                    "area": "cdArea",
-                    "cat01": "cdCat01",
-                    "cat02": "cdCat02",
-                    "cat03": "cdCat03",
-                    "cat04": "cdCat04",
-                }
-
-                cls = pd.DataFrame(
-                    [
-                        [n, co["@id"], len(co["CLASS"])]
-                        for n, co in enumerate(
-                            out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"][
-                                "CLASS_OBJ"
-                            ]
-                        )
-                        if isinstance(co["CLASS"], list)
-                    ]
-                ).sort_values(2, ascending=False)
-
-                param_names = []
-                codes = []
-                tn = OVERALL_TOTAL_NUMBER
-                for i in range(len(cls)):
-                    param_names += [ptrans[cls.iloc[i, 1]]]
-                    codes.append(
-                        list(
-                            pd.DataFrame(
-                                out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"][
-                                    "CLASS_OBJ"
-                                ][cls.iloc[i, 0]]["CLASS"]
-                            )["@code"]
-                        )
-                    )
-                    tn //= cls.iloc[i, 2]
-                    if tn < 100000:
-                        break
-
-                codes_product = []
-                pools = [tuple(pool) for pool in codes]
-                result = [[]]
-                for pool in pools:
-                    result = [x + [y] for x in result for y in pool]
-                for prod in result:
-                    codes_product += [tuple(prod)]
-
-                dfs = []
-                for q in codes_product:
-                    for n, p in enumerate(param_names):
-                        params.update({p: q[n]})
-                    try:
-                        dfs.append(self._read_one_data(url, params))
-                    finally:
-                        self.close()
-                return pd.concat(dfs, axis=0).reset_index(drop=True)
-
-            else:
-                return self._read_one_data(url, params)
+            return self._read_with_pagination(url, params)
         else:
             return self._read_one_data(url, params)
 
-    def _read_one_data(self, url, params):
-        """read one data from specified URL"""
+    def _read_with_pagination(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Read data with automatic pagination for large datasets.
+        
+        Parameters
+        ----------
+        url : str
+            Target URL
+        params : Dict[str, Any]
+            Request parameters
+            
+        Returns
+        -------
+        pd.DataFrame
+            Combined statistics data
+        """
+        # First, get total count
+        test_params = {**params, "limit": 1}
+        out = self._get_response(url, params=test_params).json()
+        total_number = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["TABLE_INF"]["OVERALL_TOTAL_NUMBER"]
+
+        if total_number <= 100000:
+            return self._read_one_data(url, params)
+
+        # For large datasets, split by classification
+        return self._read_with_classification_split(url, params, out, total_number)
+
+    def _read_with_classification_split(
+        self, 
+        url: str, 
+        params: Dict[str, Any], 
+        sample_response: Dict[str, Any],
+        total_number: int
+    ) -> pd.DataFrame:
+        """
+        Read large datasets by splitting on classification dimensions.
+        
+        Parameters
+        ----------
+        url : str
+            Target URL
+        params : Dict[str, Any]
+            Request parameters
+        sample_response : Dict[str, Any]
+            Sample response for determining split strategy
+        total_number : int
+            Total number of records
+            
+        Returns
+        -------
+        pd.DataFrame
+            Combined statistics data
+        """
+        ptrans = {
+            "tab": "cdTab", "time": "cdTime", "area": "cdArea",
+            "cat01": "cdCat01", "cat02": "cdCat02", "cat03": "cdCat03"
+        }
+
+        # Determine split strategy based on classification sizes
+        class_obj = sample_response["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"]
+        cls_info = []
+        
+        for n, co in enumerate(class_obj):
+            if isinstance(co.get("CLASS"), list):
+                cls_info.append([n, co["@id"], len(co["CLASS"])])
+        
+        cls_df = pd.DataFrame(cls_info, columns=["index", "id", "size"]).sort_values("size", ascending=False)
+
+        # Calculate split parameters
+        param_names = []
+        codes = []
+        remaining_total = total_number
+        
+        for _, row in cls_df.iterrows():
+            param_name = ptrans.get(row["id"])
+            if param_name:
+                param_names.append(param_name)
+                class_codes = [
+                    entry["@code"] for entry in 
+                    class_obj[row["index"]]["CLASS"]
+                ]
+                codes.append(class_codes)
+                remaining_total //= row["size"]
+                if remaining_total < 100000:
+                    break
+
+        # Generate parameter combinations
+        codes_product = self._generate_parameter_combinations(codes)
+        
+        # Fetch data for each combination
+        dfs = []
+        for combination in codes_product:
+            split_params = params.copy()
+            for i, param_name in enumerate(param_names):
+                split_params[param_name] = combination[i]
+            
+            try:
+                df = self._read_one_data(url, split_params)
+                dfs.append(df)
+            except Exception as e:
+                print(f"Error reading data for combination {combination}: {e}")
+                continue
+
+        return pd.concat(dfs, axis=0, ignore_index=True) if dfs else pd.DataFrame()
+
+    def _generate_parameter_combinations(self, codes: List[List[str]]) -> List[Tuple[str, ...]]:
+        """
+        Generate all combinations of parameter codes.
+        
+        Parameters
+        ----------
+        codes : List[List[str]]
+            List of code lists for each parameter
+            
+        Returns
+        -------
+        List[Tuple[str, ...]]
+            List of parameter combinations
+        """
+        if not codes:
+            return []
+        
+        result = [[]]
+        for code_list in codes:
+            result = [
+                existing + [code] 
+                for existing in result 
+                for code in code_list
+            ]
+        
+        return [tuple(combination) for combination in result]
+
+    def _read_one_data(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Read one data from specified URL.
+        
+        Parameters
+        ----------
+        url : str
+            Target URL
+        params : Dict[str, Any]
+            Request parameters
+            
+        Returns
+        -------
+        pd.DataFrame
+            Processed statistics data
+        """
         out = self._get_response(url, params=params).json()
 
-        if "RESULT" in out["GET_STATS_DATA"].keys():
-            if "STATUS" in out["GET_STATS_DATA"]["RESULT"].keys():
-                self.STATUS = out["GET_STATS_DATA"]["RESULT"]["STATUS"]
-            if "ERROR_MSG" in out["GET_STATS_DATA"]["RESULT"].keys():
-                self.ERROR_MSG = out["GET_STATS_DATA"]["RESULT"]["ERROR_MSG"]
-            if "DATE" in out["GET_STATS_DATA"]["RESULT"].keys():
-                self.DATE = out["GET_STATS_DATA"]["RESULT"]["DATE"]
+        # Store response metadata
+        self._store_stats_metadata(out)
 
-        VALUE = pd.DataFrame(
-            out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"]["VALUE"]
-        )
-        self.attrlist = list(
-            map(lambda x: x.lstrip("@"), VALUE.columns.values.tolist())
-        )
-        VALUE.columns = self.attrlist
+        # Process VALUE data
+        value_data = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"]["VALUE"]
+        value_df = pd.DataFrame(value_data)
+        
+        # Clean column names
+        self.attrlist = [col.lstrip("@") for col in value_df.columns]
+        value_df.columns = self.attrlist
 
-        if "PARAMETER" in out["GET_STATS_DATA"].keys():
-            if "LANG" in out["GET_STATS_DATA"]["PARAMETER"].keys():
-                self.LANG = out["GET_STATS_DATA"]["PARAMETER"]["LANG"]
-            if "DATA_FORMAT" in out["GET_STATS_DATA"]["PARAMETER"].keys():
-                self.DATA_FORMAT = out["GET_STATS_DATA"]["PARAMETER"]["DATA_FORMAT"]
-            if "START_POSITION" in out["GET_STATS_DATA"]["PARAMETER"].keys():
-                self.START_POSITION = out["GET_STATS_DATA"]["PARAMETER"][
-                    "START_POSITION"
-                ]
-            if "METAGET_FLG" in out["GET_STATS_DATA"]["PARAMETER"].keys():
-                self.METAGET_FLG = out["GET_STATS_DATA"]["PARAMETER"]["METAGET_FLG"]
-        if "STATISTICAL_DATA" in out["GET_STATS_DATA"].keys():
-            if "RESULT_INF" in out["GET_STATS_DATA"]["STATISTICAL_DATA"].keys():
-                if (
-                    "TOTAL_NUMBER"
-                    in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"].keys()
-                ):
-                    self.TOTAL_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"][
-                        "RESULT_INF"
-                    ]["TOTAL_NUMBER"]
-                if (
-                    "FROM_NUMBER"
-                    in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"].keys()
-                ):
-                    self.FROM_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"][
-                        "RESULT_INF"
-                    ]["FROM_NUMBER"]
-                if (
-                    "TO_NUMBER"
-                    in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"].keys()
-                ):
-                    self.TO_NUMBER = out["GET_STATS_DATA"]["STATISTICAL_DATA"][
-                        "RESULT_INF"
-                    ]["TO_NUMBER"]
-            if "TABLE_INF" in out["GET_STATS_DATA"]["STATISTICAL_DATA"].keys():
-                self.TABLE_INF = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["TABLE_INF"]
-                if "STATISTICS_NAME" in self.TABLE_INF.keys():
-                    self.STATISTICS_NAME = self.TABLE_INF["STATISTICS_NAME"]
-                if "CYCLE" in self.TABLE_INF.keys():
-                    self.CYCLE = self.TABLE_INF["CYCLE"]
-                if "OVERALL_TOTAL_NUMBER" in self.TABLE_INF.keys():
-                    self.OVERALL_TOTAL_NUMBER = self.TABLE_INF["OVERALL_TOTAL_NUMBER"]
-            if "DATA_INF" in out["GET_STATS_DATA"]["STATISTICAL_DATA"].keys():
-                if (
-                    "NOTE"
-                    in out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"].keys()
-                ):
-                    self.NOTE = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"][
-                        "NOTE"
-                    ]
-                    if isinstance(self.NOTE, list):
-                        note_char = [n["@char"] for n in self.NOTE]
-                        VALUE["$"] = VALUE["$"].replace(note_char, self.na_values)
-                    elif isinstance(self.NOTE, dict):
-                        note_char = self.NOTE["@char"]
-                        VALUE["$"] = VALUE["$"].replace(note_char, self.na_values)
-                    if np.isnan(self.na_values):
-                        VALUE["$"] = VALUE["$"].astype(float)
+        # Handle missing values
+        value_df = self._handle_missing_values(value_df, out)
 
-        CLASS_OBJ = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"]
-        if isinstance(CLASS_OBJ, list):
-            for co in CLASS_OBJ:
-                CLASS = co["CLASS"]
-                if isinstance(CLASS, list):
-                    CLASS = pd.DataFrame(co["CLASS"])
-                elif isinstance(CLASS, dict):
-                    CLASS = pd.DataFrame(pd.Series(co["CLASS"])).T
-                else:
-                    continue
-                CLASS = CLASS.set_index("@code")
-                if self.name_or_id == "id":
-                    CLASS.columns = list(
-                        map(
-                            lambda x: co["@id"] + "_" + x.lstrip("@"),
-                            CLASS.columns.values.tolist(),
-                        )
-                    )
-                    self.tabcol = "tab_name"
-                    VALUE = VALUE.merge(
-                        CLASS, left_on=co["@id"], right_index=True, how="left"
-                    )
-                else:
-                    CLASS.columns = list(
-                        map(
-                            lambda x: co["@name"] + x.lstrip("@"),
-                            CLASS.columns.values.tolist(),
-                        )
-                    )
-                    self.tabcol = "表章項目名"
-                    VALUE = VALUE.merge(
-                        CLASS, left_on=co["@id"], right_index=True, how="left"
-                    )
+        # Process class objects and merge metadata
+        value_df = self._merge_class_metadata(value_df, out)
+
+        # Apply naming conventions
+        value_df = self._apply_naming_conventions(value_df)
+
+        return value_df
+
+
+    def _store_stats_metadata(self, out: Dict[str, Any]) -> None:
+        """Store statistics metadata as instance attributes."""
+        stats_data = out.get("GET_STATS_DATA", {})
+        
+        # Store result metadata
+        result = stats_data.get("RESULT", {})
+        self.STATUS = result.get("STATUS")
+        self.ERROR_MSG = result.get("ERROR_MSG")
+        self.DATE = result.get("DATE")
+
+        # Store parameter metadata
+        parameter = stats_data.get("PARAMETER", {})
+        self.LANG = parameter.get("LANG")
+        self.DATA_FORMAT = parameter.get("DATA_FORMAT")
+        self.START_POSITION = parameter.get("START_POSITION")
+        self.METAGET_FLG = parameter.get("METAGET_FLG")
+
+        # Store statistical data metadata
+        statistical_data = stats_data.get("STATISTICAL_DATA", {})
+        result_inf = statistical_data.get("RESULT_INF", {})
+        self.TOTAL_NUMBER = result_inf.get("TOTAL_NUMBER")
+        self.FROM_NUMBER = result_inf.get("FROM_NUMBER")
+        self.TO_NUMBER = result_inf.get("TO_NUMBER")
+
+        # Store table information
+        table_inf = statistical_data.get("TABLE_INF", {})
+        self.TABLE_INF = table_inf
+        self.STATISTICS_NAME = table_inf.get("STATISTICS_NAME")
+        self.CYCLE = table_inf.get("CYCLE")
+        self.OVERALL_TOTAL_NUMBER = table_inf.get("OVERALL_TOTAL_NUMBER")
+
+        # Process title and create stats data name
+        title = table_inf.get("TITLE", "")
+        if isinstance(title, dict):
+            self.TITLE = title.get("$", "")
         else:
+            self.TITLE = title
+
+        gov_org = table_inf.get("GOV_ORG", {})
+        self.GOV_ORG = gov_org.get("$", "") if isinstance(gov_org, dict) else str(gov_org)
+
+        # Create standardized stats data name
+        cycle = self.CYCLE if self.CYCLE != "-" else ""
+        name_parts = [self.STATISTICS_NAME, self.TITLE, cycle, self.GOV_ORG]
+        self.StatsDataName = "_".join(filter(None, name_parts)).replace(" ", "_")
+
+    def _handle_missing_values(self, value_df: pd.DataFrame, out: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Handle missing values in the data.
+        
+        Parameters
+        ----------
+        value_df : pd.DataFrame
+            Value DataFrame
+        out : Dict[str, Any]
+            Full API response
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with missing values handled
+        """
+        note = out.get("GET_STATS_DATA", {}).get("STATISTICAL_DATA", {}).get("DATA_INF", {}).get("NOTE")
+        
+        if note:
+            if isinstance(note, list):
+                note_chars = [n["@char"] for n in note]
+            elif isinstance(note, dict):
+                note_chars = [note["@char"]]
+            else:
+                note_chars = []
+            
+            if note_chars:
+                value_df = value_df.assign(**{
+                    "$": value_df["$"].replace(note_chars, self.na_values)
+                })
+        
+        # Convert to float if na_values is NaN
+        if pd.isna(self.na_values):
+            value_df = value_df.assign(**{
+                "$": pd.to_numeric(value_df["$"], errors="coerce")
+            })
+            
+        return value_df
+
+    def _merge_class_metadata(self, value_df: pd.DataFrame, out: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Merge class metadata with value data.
+        
+        Parameters
+        ----------
+        value_df : pd.DataFrame
+            Value DataFrame
+        out : Dict[str, Any]
+            Full API response
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with merged metadata
+        """
+        class_obj = out.get("GET_STATS_DATA", {}).get("STATISTICAL_DATA", {}).get("CLASS_INF", {}).get("CLASS_OBJ", [])
+        
+        if not isinstance(class_obj, list):
             print("CLASS_OBJはlist型ではありません。")
+            return value_df
 
-        VALUE.columns = VALUE.columns = [
-            c + "_code" if c in self.attrlist else c for c in VALUE.columns
-        ]
-        VALUE.rename(columns={"$_code": "value"}, inplace=True)
+        for co in class_obj:
+            class_data = co.get("CLASS")
+            if not class_data:
+                continue
+                
+            # Convert class data to DataFrame
+            if isinstance(class_data, list):
+                class_df = pd.DataFrame(class_data)
+            elif isinstance(class_data, dict):
+                class_df = pd.DataFrame(pd.Series(class_data)).T
+            else:
+                continue
+
+            # Set up merge
+            class_df = class_df.set_index("@code")
+            
+            # Apply naming convention
+            if self.name_or_id == "id":
+                class_df = class_df.assign(**{
+                    f"{co['@id']}_{col.lstrip('@')}": class_df[col]
+                    for col in class_df.columns
+                }).drop(columns=class_df.columns.tolist())
+                self.tabcol = "tab_name"
+            else:
+                class_df = class_df.assign(**{
+                    f"{co['@name']}{col.lstrip('@')}": class_df[col]
+                    for col in class_df.columns
+                }).drop(columns=class_df.columns.tolist())
+                self.tabcol = "表章項目名"
+
+            # Merge with value data
+            value_df = value_df.merge(
+                class_df, 
+                left_on=co["@id"], 
+                right_index=True, 
+                how="left"
+            )
+
+        return value_df
+
+    def _apply_naming_conventions(self, value_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply naming conventions to the DataFrame.
+        
+        Parameters
+        ----------
+        value_df : pd.DataFrame
+            Input DataFrame
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with proper naming conventions
+        """
+        # Add "_code" suffix to attribute columns
+        new_columns = {}
+        for col in value_df.columns:
+            if col in self.attrlist:
+                new_columns[col] = f"{col}_code"
+            else:
+                new_columns[col] = col
+        
+        value_df = value_df.rename(columns=new_columns)
+        value_df = value_df.rename(columns={"$_code": "value"})
+
+        # Apply Japanese naming if requested
         if self.name_or_id == "name":
-            VALUE = self.rename_japanese(VALUE)
-            VALUE.rename(columns={"value": "値"}, inplace=True)
+            value_df = self.colname_to_japanese(value_df)
+            value_df = value_df.rename(columns={"value": "値"})
 
-        if isinstance(self.TABLE_INF["TITLE"], dict):
-            self.TITLE = self.TABLE_INF["TITLE"]["$"]
+        return value_df
+
+    def _denormalize_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Denormalize data by removing code/level columns and unstacking.
+        
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input normalized data
+            
+        Returns
+        -------
+        pd.DataFrame
+            Denormalized data
+        """
+        # Define columns to drop based on naming convention
+        if self.name_or_id == "name":
+            drop_patterns = ["コード", "階層レベル", "unit", "単位", "親コード", "追加情報"]
         else:
-            self.TITLE = self.TABLE_INF["TITLE"]
-        self.GOV_ORG = self.TABLE_INF["GOV_ORG"]["$"]
-        if self.CYCLE != "-":
-            self.StatsDataName = (
-                self.STATISTICS_NAME
-                + "_"
-                + self.TITLE
-                + "_"
-                + self.CYCLE
-                + "_"
-                + self.GOV_ORG
-            ).replace(" ", "_")
+            drop_patterns = ["code", "level", "unit", "parentCode", "addInf"]
+        
+        # Drop unnecessary columns
+        cols_to_drop = [
+            col for col in data.columns 
+            if any(pattern in col for pattern in drop_patterns)
+        ]
+        df = data.drop(columns=cols_to_drop)
+
+        # Unstack if tabcol is in index
+        if hasattr(self, 'tabcol') and self.tabcol in df.index.names:
+            if self.name_or_id == "name":
+                name_cols = [col for col in df.columns if "名" in col]
+            else:
+                name_cols = [col for col in df.columns if "name" in col]
+            
+            if name_cols:
+                df = df.set_index(name_cols)
+                df = df.unstack(self.tabcol)
+                df.columns = [col[1] for col in df.columns]
+                df = df.reset_index()
+
+        # Clean column names
+        df = df.assign(**{
+            col.replace("_name", "").rstrip("名"): df[col]
+            for col in df.columns
+        }).drop(columns=df.columns.tolist())
+
+        return df
+
+    def _split_by_units(self, data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """
+        Split data by units.
+        
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Input data
+            
+        Returns
+        -------
+        Dict[str, pd.DataFrame]
+            Dictionary of DataFrames split by unit
+        """
+        # Handle unit columns
+        unit_col = None
+        if "単位コード" in data.columns:
+            unit_col = "単位コード"
+        elif "unit_code" in data.columns:
+            unit_col = "unit_code"
+        
+        if unit_col:
+            data = data.assign(**{
+                "unit": data[unit_col].fillna("単位なし")
+            }).drop(columns=[unit_col])
         else:
-            self.StatsDataName = (
-                self.STATISTICS_NAME + "_" + self.TITLE + "_" + self.GOV_ORG
-            ).replace(" ", "_")
+            data = data.assign(unit="単位なし")
 
-        return VALUE
-
+        # Split by unit
+        datasets = {}
+        for unit in data["unit"].unique():
+            unit_data = data[data["unit"] == unit]
+            datasets[unit] = self._denormalize_data(unit_data)
+        
+        return datasets
 
 class DataCatalogReader(_eStatReader):
+    """
+    Reader for eStat data catalog API.
+    データカタログ情報取得 API
+    URL+ https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_7
+
+    
+    Parameters
+    ----------
+    api_key : str
+        e-Stat application ID (appId)
+    explanationGetFlg : Optional[str], default None
+        Flag for getting explanation data ("Y" or "N")
+    retry_count : int, default 3
+        Number of times to retry query request
+    pause : float, default 0.1
+        Time, in seconds, of the pause between retries
+    timeout : int, default 30
+        Request timeout in seconds
+    session : Optional[requests.Session], default None
+        requests.sessions.Session instance to be used
+    Various filter parameters for catalog search
+    limit : int, default 100000
+        Limit for pagination
+    """
+
     def __init__(
         self,
-        api_key,
-        explanationGetFlg=None,
-        retry_count=3,
-        pause=0.1,
-        timeout=30,
-        session=None,
-        surveyYears=None,
-        openYears=None,
-        statsField=None,
-        statsCode=None,
-        searchWord=None,
-        collectArea=None,
-        dataType=None,
-        startPosition=None,
-        catalogId=None,
-        resourceId=None,
-        limit=100000,
-        updatedDate=None,
-    ):
-
+        api_key: str,
+        explanationGetFlg: Optional[str] = None,
+        retry_count: int = 3,
+        pause: float = 0.1,
+        timeout: int = 30,
+        session: Optional[requests.Session] = None,
+        surveyYears: Optional[Union[str, int]] = None,
+        openYears: Optional[Union[str, int]] = None,
+        statsField: Optional[Union[str, int]] = None,
+        statsCode: Optional[Union[str, int]] = None,
+        searchWord: Optional[str] = None,
+        collectArea: Optional[int] = None,
+        dataType: Optional[str] = None,
+        startPosition: Optional[Union[str, int]] = None,
+        catalogId: Optional[Union[str, int]] = None,
+        resourceId: Optional[Union[str, int]] = None,
+        limit: int = 100000,
+        updatedDate: Optional[Union[str, int]] = None,
+    ) -> None:
         super().__init__(
             api_key=api_key,
             explanationGetFlg=explanationGetFlg,
@@ -971,23 +1412,12 @@ class DataCatalogReader(_eStatReader):
             session=session,
         )
 
-        if api_key is None:
-            api_key = os.getenv("ESTAT_API_KEY")
-        if not api_key or not isinstance(api_key, str):
-            raise ValueError(
-                "The eStat API key must be provided either "
-                "through the api_key variable or through the "
-                "environmental variable ESTAT_API_KEY."
-            )
-
-        self.api_key = api_key
         self.surveyYears = surveyYears
         self.openYears = openYears
         self.statsField = statsField
         self.statsCode = statsCode
         self.searchWord = searchWord
         self.collectArea = collectArea
-        self.explanationGetFlg = explanationGetFlg
         self.dataType = dataType
         self.startPosition = startPosition
         self.catalogId = catalogId
@@ -996,92 +1426,327 @@ class DataCatalogReader(_eStatReader):
         self.updatedDate = updatedDate
 
     @property
-    def url(self):
-        """API URL"""
-        DataCatalog_URL = _BASE_URL + "/getDataCatalog?"
-        return DataCatalog_URL
+    def url(self) -> str:
+        """API URL for getDataCatalog."""
+        return self.get_url("getDataCatalog")
 
     @property
-    def params(self):
-        """Parameters to use in API calls"""
-        pdict = {
-            "appId": self.api_key,
-        }
+    def params(self) -> Dict[str, Any]:
+        """Parameters to use in API calls."""
+        pdict = {"appId": self.api_key}
 
-        if isinstance(self.surveyYears, (str, int)):
-            pdict.update({"surveyYears": self.surveyYears})
-        if isinstance(self.surveyYears, (str, int)):
-            pdict.update({"surveyYears": self.surveyYears})
-        if isinstance(self.openYears, (str, int)):
-            pdict.update({"openYears": self.openYears})
-        if isinstance(self.statsField, (str, int)):
-            pdict.update({"statsField": self.statsField})
-        if isinstance(self.statsCode, (str, int)):
-            pdict.update({"statsCode": self.statsCode})
-        if isinstance(self.searchWord, str):
-            pdict.update({"searchWord": self.searchWord})
-        if self.collectArea in range(1, 4):
-            pdict.update({"collectArea": self.collectArea})
-        if self.explanationGetFlg in ["Y", "N"]:
-            pdict.update({"explanationGetFlg": self.explanationGetFlg})
-        if self.dataType in ["XLS", "CSV", "PDF", "XML", "XLS_REP", "DB"]:
-            pdict.update({"dataType": self.dataType})
-        if isinstance(self.startPosition, (str, int)):
-            pdict.update({"startPosition": self.startPosition})
-        if isinstance(self.catalogId, (str, int)):
-            pdict.update({"catalogId": self.catalogId})
-        if isinstance(self.resourceId, (str, int)):
-            pdict.update({"resourceId": self.resourceId})
-        if isinstance(self.updatedDate, (str, int)):
-            pdict.update({"updatedDate": self.updatedDate})
+        # Add parameters with validation
+        param_mappings = [
+            ("surveyYears", self.surveyYears, lambda x: isinstance(x, (str, int))),
+            ("openYears", self.openYears, lambda x: isinstance(x, (str, int))),
+            ("statsField", self.statsField, lambda x: isinstance(x, (str, int))),
+            ("statsCode", self.statsCode, lambda x: isinstance(x, (str, int))),
+            ("searchWord", self.searchWord, lambda x: isinstance(x, str)),
+            ("collectArea", self.collectArea, lambda x: x in range(1, 4)),
+            ("explanationGetFlg", self.explanationGetFlg, lambda x: x in ["Y", "N"]),
+            ("dataType", self.dataType, lambda x: x in ["XLS", "CSV", "PDF", "XML", "XLS_REP", "DB"]),
+            ("startPosition", self.startPosition, lambda x: isinstance(x, (str, int))),
+            ("catalogId", self.catalogId, lambda x: isinstance(x, (str, int))),
+            ("resourceId", self.resourceId, lambda x: isinstance(x, (str, int))),
+            ("updatedDate", self.updatedDate, lambda x: isinstance(x, (str, int))),
+        ]
+
+        for param_name, param_value, validator in param_mappings:
+            if param_value is not None and validator(param_value):
+                pdict[param_name] = param_value
 
         return pdict
 
-    def read(self):
-        """Read data from connector"""
-        try:
-            return self._read_one_data(self.url, self.params)
-        finally:
-            self.close()
-
-    def _read_one_data(self, url, params):
-        """read one data from specified URL"""
+    def _read_one_data(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Read one data from specified URL.
+        
+        Parameters
+        ----------
+        url : str
+            Target URL
+        params : Dict[str, Any]
+            Request parameters
+            
+        Returns
+        -------
+        pd.DataFrame
+            Processed data catalog information
+        """
         out = self._get_response(url, params=params).json()
 
-        self.STATUS = out["GET_DATA_CATALOG"]["RESULT"]["STATUS"]
-        self.ERROR_MSG = out["GET_DATA_CATALOG"]["RESULT"]["ERROR_MSG"]
-        self.DATE = out["GET_DATA_CATALOG"]["RESULT"]["DATE"]
-        self.LANG = out["GET_DATA_CATALOG"]["PARAMETER"]["LANG"]
-        self.DATA_FORMAT = out["GET_DATA_CATALOG"]["PARAMETER"]["DATA_FORMAT"]
-        self.NUMBER = out["GET_DATA_CATALOG"]["DATA_CATALOG_LIST_INF"]["NUMBER"]
-        self.FROM_NUMBER = out["GET_DATA_CATALOG"]["DATA_CATALOG_LIST_INF"][
-            "RESULT_INF"
-        ]["FROM_NUMBER"]
-        self.TO_NUMBER = out["GET_DATA_CATALOG"]["DATA_CATALOG_LIST_INF"]["RESULT_INF"][
-            "TO_NUMBER"
-        ]
-        if (
-            "NEXT_KEY"
-            in out["GET_DATA_CATALOG"]["DATA_CATALOG_LIST_INF"]["RESULT_INF"].keys()
-        ):
-            self.NEXT_KEY = out["GET_DATA_CATALOG"]["DATA_CATALOG_LIST_INF"][
-                "RESULT_INF"
-            ]["NEXT_KEY"]
+        # Store response metadata
+        self._store_catalog_metadata(out)
 
-        DATA_CATALOG_INF = pd.json_normalize(
+        # Extract and process data catalog information
+        data_catalog_inf = pd.json_normalize(
             out,
-            record_path=[
-                "GET_DATA_CATALOG",
-                "DATA_CATALOG_LIST_INF",
-                "DATA_CATALOG_INF",
-            ],
+            record_path=["GET_DATA_CATALOG", "DATA_CATALOG_LIST_INF", "DATA_CATALOG_INF"],
             sep="_",
         )
-        DATA_CATALOG_INF.columns = list(
-            map(
-                lambda x: x.replace("@", "").rstrip("_$"),
-                DATA_CATALOG_INF.columns.values.tolist(),
-            )
-        )
+        
+        # Clean column names
+        data_catalog_inf = data_catalog_inf.assign(**{
+            col.replace("@", "").rstrip("_$"): data_catalog_inf[col]
+            for col in data_catalog_inf.columns
+        }).drop(columns=data_catalog_inf.columns.tolist())
 
-        return DATA_CATALOG_INF
+        return data_catalog_inf
+
+    def _store_catalog_metadata(self, out: Dict[str, Any]) -> None:
+        """Store catalog metadata as instance attributes."""
+        catalog_data = out.get("GET_DATA_CATALOG", {})
+        
+        # Store result metadata
+        result = catalog_data.get("RESULT", {})
+        self.STATUS = result.get("STATUS")
+        self.ERROR_MSG = result.get("ERROR_MSG")
+        self.DATE = result.get("DATE")
+
+        # Store parameter metadata
+        parameter = catalog_data.get("PARAMETER", {})
+        self.LANG = parameter.get("LANG")
+        self.DATA_FORMAT = parameter.get("DATA_FORMAT")
+
+        # Store catalog list metadata
+        catalog_list_inf = catalog_data.get("DATA_CATALOG_LIST_INF", {})
+        self.NUMBER = catalog_list_inf.get("NUMBER")
+        
+        result_inf = catalog_list_inf.get("RESULT_INF", {})
+        self.FROM_NUMBER = result_inf.get("FROM_NUMBER")
+        self.TO_NUMBER = result_inf.get("TO_NUMBER")
+        self.NEXT_KEY = result_inf.get("NEXT_KEY")
+
+
+
+
+# メタ情報を取得する関数
+def get_metainfo(
+        appId: str,
+        statsDataId: str,
+        version: str="3.0",
+        timeout: int=10,
+    ) -> Dict[str, Any]:
+    meta_url = f"https://api.e-stat.go.jp/rest/{version}/app/json/getMetaInfo"
+    meta_params = {"appId": appId, "statsDataId": statsDataId}
+    try:
+        meta_res = requests.get(meta_url, params=meta_params, timeout=timeout)
+        meta_res.raise_for_status()
+        return meta_res.json()
+    except requests.exceptions.HTTPError as e:
+        print("HTTPError:", e)
+        return {"error": "HTTP request failed"}
+    except Exception as e:
+        print(f"Exception Error: {e}")
+        return {"error": "An unexpected error occurred"}
+
+# 統計データを取得する関数
+def get_statsdata(
+        appId: str, 
+        statsDataId: str, 
+        params: Dict[str, Any]=None, 
+        version: str="3.0", 
+        timeout: int=60
+    ) -> Dict[str, Any]:
+    if params is None:
+        params = {}
+    data_url = f"https://api.e-stat.go.jp/rest/{version}/app/json/getStatsData"
+    data_params = {"appId": appId, "statsDataId": statsDataId}
+    data_params.update(params)
+    try:
+        data_res = requests.get(data_url, params=data_params, timeout=timeout)
+        data_res.raise_for_status()
+        return data_res.json()
+    except requests.exceptions.HTTPError as e:
+        print("HTTPError:", e)
+        return {"error": "HTTP request failed"}
+    except Exception as e:
+        print(f"Exception Error: {e}")
+        return {"error": "An unexpected error occurred"}
+
+# 統計データのJSONからDataFrameを抽出する関数
+def statsjson_to_dataframe(data: Dict[str, Any]) -> pd.DataFrame:
+    value = pd.json_normalize(
+        data, 
+        record_path=["GET_STATS_DATA", "STATISTICAL_DATA", "DATA_INF", "VALUE"]
+    ).rename(
+        columns=lambda col: col.lstrip("@").replace("$", "value")
+    )
+    return value
+
+# 統計データの欠測値をNumPyのNaNに置換する関数
+def missing_to_nan(
+        value: pd.DataFrame, 
+        note: Union[Dict[str, str], List[Dict[str, str]]]
+    ) -> pd.DataFrame:
+    if isinstance(note, dict):
+        note_char = note["@char"]
+    elif isinstance(note, list):
+        note_char = [n["@char"] for n in note]
+    else:
+        print(f"引数noteの型は辞書またはリストにしてください。noteの型: {type(note)}")
+        return value
+    return value.assign(**{
+        "value": lambda df: df["value"]
+            .replace(note_char, np.nan)
+            .astype(float)
+    })
+
+# statsjson_to_dataframeとmissing_to_nan、及びメタデータ結合を一括処理する関数
+def cleansing_statsdata(data: Dict[str, Any]) -> pd.DataFrame:
+    value = statsjson_to_dataframe(data)
+    note = data["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"].get("NOTE")
+    if note:
+        value = missing_to_nan(value, note)
+    else:
+        value = value.assign(**{
+            "value": lambda df: df["value"].astype(float)
+        })
+    class_obj = data["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"]
+    for co in class_obj:
+        class_entries = co["CLASS"]
+        if isinstance(class_entries, list):
+            cls_df = pd.DataFrame(class_entries)
+        elif isinstance(class_entries, dict):
+            cls_df = pd.DataFrame(pd.Series(class_entries)).T
+        else:
+            print("CLASS_INF>CLASS_OBJ>CLASSの型: ", type(class_entries))
+            continue
+        cls_df = (cls_df
+            .set_index("@code")
+            .rename(columns=lambda col: f"{co['@name']}{col.lstrip('@')}")
+        )
+        value = (value
+            .merge(cls_df, left_on=co["@id"], right_index=True, how="left")
+            .rename(columns={co["@id"]: f"{co['@name']}code"})
+        )
+    return value
+
+
+# Utility functions for modern data processing
+def create_hierarchy_dataframe(metainfo: Dict[str, Any], cat_key: int) -> pd.DataFrame:
+    """
+    Create a hierarchical DataFrame based on metadata information.
+    
+    This function creates a DataFrame where each row represents a bottom-level node
+    in the hierarchy, with columns for each hierarchical level containing 
+    "code_name" format values. Missing intermediate levels are forward-filled.
+
+    Parameters
+    ----------
+    metainfo : Dict[str, Any]
+        Metadata information containing hierarchical data with @code, @name, 
+        @level, and @parentCode fields
+    cat_key : int
+        Target category key index
+
+    Returns
+    -------
+    pd.DataFrame
+        Hierarchical DataFrame with bottom-level nodes as rows and 
+        hierarchical levels as columns
+        
+    Examples
+    --------
+    >>> hierarchy_df = create_hierarchy_dataframe(metainfo, 0)
+    >>> print(hierarchy_df.head())
+    """
+    # Extract target category metadata
+    cat_meta = metainfo["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"][cat_key]
+    meta_name = cat_meta["@name"]
+    meta_cls_df = pd.DataFrame(cat_meta["CLASS"]).assign(
+        **{"@level": lambda df: df["@level"].astype(int)}
+    )
+    
+    # Create set of parent codes for identifying leaf nodes
+    parent_codes = {
+        row.get("@parentCode") 
+        for _, row in meta_cls_df.iterrows() 
+        if row.get("@parentCode") and str(row.get("@parentCode")).strip()
+    }
+    
+    # Create code-to-record mapping
+    code_to_record = {row["@code"]: row for _, row in meta_cls_df.iterrows()}
+
+    def _get_ancestry_chain(meta_record: Dict[str, Any]) -> Dict[int, str]:
+        """
+        Get ancestry chain for a metadata record.
+        
+        Parameters
+        ----------
+        meta_record : Dict[str, Any]
+            Metadata record with @code, @name, @level, @parentCode fields
+
+        Returns
+        -------
+        Dict[int, str]
+            Dictionary mapping level to code for the ancestry chain
+        """
+        chain = {}
+        current_record = meta_record
+        
+        while current_record is not None:
+            level = current_record["@level"]
+            chain[level] = current_record["@code"]
+            parent_code = current_record.get("@parentCode")
+            
+            if not parent_code or parent_code not in code_to_record:
+                break
+                
+            current_record = code_to_record[parent_code]
+        
+        return chain
+
+    # Process leaf nodes only
+    max_level = meta_cls_df["@level"].max()
+    chain_rows = []
+    
+    for _, row in meta_cls_df.iterrows():
+        # Skip parent nodes
+        if row["@code"] in parent_codes:
+            continue
+
+        node_level = row["@level"]
+        ancestry = _get_ancestry_chain(row)
+        row_chain = {}
+        last_code = None
+        
+        # Build hierarchy with forward fill
+        for level in range(1, max_level + 1):
+            col = f"level{level}"
+            if level <= node_level:
+                if level in ancestry:
+                    last_code = ancestry[level]
+                    row_chain[col] = ancestry[level]
+                else:
+                    row_chain[col] = last_code  # Forward fill
+            else:
+                row_chain[col] = None
+                
+        chain_rows.append(row_chain)
+
+    hierarchy_df = pd.DataFrame(chain_rows)
+
+    # Merge with names to create "code_name" format
+    for level in range(1, max_level + 1):
+        level_col = f"level{level}"
+        name_col = f"{meta_name}階層{level}"
+        
+        name_df = meta_cls_df[["@code", "@name"]].assign(
+            **{
+                level_col: meta_cls_df["@code"],
+                name_col: meta_cls_df["@code"] + "_" + meta_cls_df["@name"]
+            }
+        )[["@code", name_col]].rename(columns={"@code": level_col})
+        
+        hierarchy_df = hierarchy_df.merge(name_df, on=level_col, how="left")
+
+    # Apply forward fill to both code and name columns
+    level_cols = [f"level{level}" for level in range(1, max_level + 1)]
+    hierarchy_cols = [f"{meta_name}階層{level}" for level in range(1, max_level + 1)]
+    
+    hierarchy_df[level_cols] = hierarchy_df[level_cols].fillna(method="ffill", axis=1)
+    hierarchy_df[hierarchy_cols] = hierarchy_df[hierarchy_cols].fillna(method="ffill", axis=1)
+
+    return hierarchy_df
+
