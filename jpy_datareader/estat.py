@@ -193,28 +193,6 @@ class _eStatReader(_BaseReader):
             )
         return f"{_BASE_URL}/{path}?"
 
-    def colname_to_japanese(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Convert column names to Japanese using non-destructive assign pattern.
-        
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Input DataFrame
-            
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with Japanese column names
-        """
-        def convert_column_name(col: str) -> str:
-            for k, v in ATTR_DICT.items():
-                col = col.replace(k, v)
-            return col
-        
-        new_columns = {col: convert_column_name(col) for col in df.columns}
-        return df.rename(columns=new_columns)
-
 
 class StatsListReader(_eStatReader):
     """
@@ -491,12 +469,17 @@ class MetaInfoReader(_eStatReader):
     statsDataId : Union[str, int]
         Statistics data ID
         「統計表情報取得」で得られる統計表IDです。
-    name_or_id : str, default "name"
-        Whether to use "name" or "id" for column naming
-    lvhierarchy : bool, default False
+    prefix_colname_with_classname: bool, default True
+        Whether to prefix column names with class names
+    has_lv_hierarchy : bool, default False
         Whether to create hierarchy levels
-    lvfillna : bool, default False
+    use_fillna_lv_hierarchy : bool, default False
         Whether to fill NA values in hierarchy levels
+    lang : Optional[str], default None
+        Language for retrieved data. Either "J" (Japanese) or "E" (English).
+        取得するデータの言語を 以下のいずれかを指定して下さい。
+        ・J：日本語 (省略値)
+        ・E：英語
     explanationGetFlg : Optional[str], default None
         Flag for getting explanation data ("Y" or "N")
         統計表及び、提供統計、提供分類、各事項の解説を取得するか否かを以下のいずれかから指定して下さい。
@@ -519,9 +502,10 @@ class MetaInfoReader(_eStatReader):
         self,
         api_key: str,
         statsDataId: Union[str, int],
-        name_or_id: str = "name",
-        lvhierarchy: bool = False,
-        lvfillna: bool = False,
+        prefix_colname_with_classname: bool = True,
+        has_lv_hierarchy: bool = False,
+        use_fillna_lv_hierarchy: bool = True,
+        lang: Optional[str] = None,
         explanationGetFlg: Optional[str] = None,
         retry_count: int = 3,
         pause: float = 0.1,
@@ -531,6 +515,7 @@ class MetaInfoReader(_eStatReader):
     ) -> None:
         super().__init__(
             api_key=api_key,
+            lang=lang,
             explanationGetFlg=explanationGetFlg,
             retry_count=retry_count,
             pause=pause,
@@ -540,9 +525,9 @@ class MetaInfoReader(_eStatReader):
         )
 
         self.statsDataId = statsDataId
-        self.name_or_id = name_or_id
-        self.lvhierarchy = lvhierarchy
-        self.lvfillna = lvfillna
+        self.prefix_colname_with_classname = prefix_colname_with_classname
+        self.has_lv_hierarchy = has_lv_hierarchy
+        self.use_fillna_lv_hierarchy = use_fillna_lv_hierarchy
 
     @property
     def url(self) -> str:
@@ -561,18 +546,39 @@ class MetaInfoReader(_eStatReader):
 
         return pdict
     
-    def read(self) -> List[Union[pd.DataFrame, List[pd.DataFrame]]]:
+    def read(self) -> pd.DataFrame:
         """
-        Read data from connector and return list of DataFrames.
+        Read data from connector and return the DataFrame with the most rows.
+        Excludes DataFrames with 'id': 'time'.
         
         Returns
         -------
-        List[Union[pd.DataFrame, List[pd.DataFrame]]]
-            List of DataFrames for each CLASS_OBJ. If lvhierarchy=True,
-            returns list of [class_df, hierarchy_df] pairs.
+        pd.DataFrame
+            DataFrame with the most rows from all CLASS_OBJ DataFrames (excluding 'time')
         """
         try:
-            return self.read_class_obj_dfs()
+            result_dfs = self.read_class_obj_dfs()
+            
+            if not result_dfs:
+                return pd.DataFrame()
+            
+            # Find the DataFrame with the most rows (excluding 'time')
+            max_rows = 0
+            largest_df = pd.DataFrame()
+            
+            for class_data in result_dfs:
+                # Skip if id is 'time'
+                if class_data["id"] == 'time':
+                    continue
+                
+                df = class_data["meta_dataframe"]
+                
+                if len(df) > max_rows:
+                    max_rows = len(df)
+                    largest_df = df
+            
+            return largest_df
+            
         finally:
             self.close()
 
@@ -583,74 +589,106 @@ class MetaInfoReader(_eStatReader):
             json_data = response.json()
             
             # Store response metadata as instance attributes
-            meta_info = json_data.get("GET_META_INFO", {})
-            self._store_params_in_attrs(meta_info)
+            self._store_params_in_attrs(json_data)
             
-            return json_data
+            return json_data 
         finally:
             self.close()
 
-
-    def read_class_obj_dfs(self) -> List[Union[pd.DataFrame, List[pd.DataFrame]]]:
+    def read_class_obj_dfs(self) -> List[Dict[str, Any]]:
         """
         Read and process CLASS_OBJ data into DataFrames.
+        CLASS_OBJ dictionary's keys: ['@id', '@name', 'CLASS']
+        CLASS dictionary's keys: ['@code', '@name', '@level', '@unit']
         
         Returns
         -------
-        List[Union[pd.DataFrame, List[pd.DataFrame]]]
-            List of processed DataFrames
+        List[Dict[str, Any]]
+            List of dictionaries with keys: "id", "name", "meta_dataframe", "hierarchy"
         """
         response = self._get_response(self.url, params=self.params)
         json_data = response.json()
         
         # Store response metadata as instance attributes
-        meta_info = json_data.get("GET_META_INFO", {})
-        self._store_params_in_attrs(meta_info)
+        self._store_params_in_attrs(json_data)
         
         # Get class objects
+        meta_info = json_data.get("GET_META_INFO", {})
         class_obj = meta_info.get("METADATA_INF", {}).get("CLASS_INF", {}).get("CLASS_OBJ", [])
         
         if not isinstance(class_obj, list):
             print("CLASS_OBJはlist型ではありません。")
             return []
         
-        result_dfs = {}
+        result_dfs = []
         
         for i, co in enumerate(class_obj):
-            class_data = co.get("CLASS")
-            class_df = self._create_class_dataframe(class_data, co)
-            
-            if class_df is None:
+            # クラスIDを取得
+            class_id = co.get("@id")
+            if not class_id:
+                print(f"警告: クラスID（@id）が見つかりません。処理をスキップします。")
                 continue
-                
+            
             # クラス名を取得（複数の方法で試行）
-            class_name = co.get("@name") or co.get("@id") or f"class_{i}"
+            class_name = co.get("@name")
+            if not class_name:
+                print(f"警告: クラス名（@name）が見つかりません。処理をスキップします。クラスID: {class_id}")
+                continue  # このクラスをスキップして次のクラスに進む
             
-            # Check if hierarchy processing is needed
-            is_hierarchy = self.lvhierarchy and len(class_df["level"].unique()) > 1
+            class_data = co.get("CLASS")
             
-            if is_hierarchy:
-                # Use the external function to create hierarchy
-                hierarchy_df = create_hierarchy_dataframe(json_data, i)
-                result_dfs[class_name] = [class_df, hierarchy_df]
-            else:
-                result_dfs[class_name] = class_df
+            # 列名変換前の生データフレームを作成
+            class_df_raw = self._create_class_dataframe_raw(class_data, co)
+            
+            if class_df_raw is None:
+                continue
+
+            # Check if hierarchy processing is needed (生データで判定)
+            hierarchy_df = None
+            if (self.has_lv_hierarchy and 
+                "@level" in class_df_raw.columns and 
+                len(class_df_raw["@level"].unique()) > 1):
+                # Use the method to create hierarchy
+                hierarchy_df = self._create_hierarchy_dataframe(json_data, i)
+
+            # 列名変換を実行
+            class_df = self._apply_column_transformations(class_df_raw, class_name)
+
+            # Create result dictionary
+            result_dict = {
+                "id": class_id,
+                "name": class_name,
+                "meta_dataframe": class_df,
+            }
+
+            if hierarchy_df is not None:
+                result_dict["hierarchy"] = hierarchy_df
+            
+            result_dfs.append(result_dict)
         
         return result_dfs
 
-    def _store_params_in_attrs(self, meta_info: Dict[str, Any]) -> None:
+    def _store_params_in_attrs(self, json_data: Dict[str, Any]) -> None:
         """Store params in attributes as instance variables."""
+        # GET_META_INFOセクションを取得
+        meta_info = json_data.get("GET_META_INFO", {})
+        
+        # RESULTセクションの処理
         result = meta_info.get("RESULT", {})
         self.STATUS = result.get("STATUS")
         self.ERROR_MSG = result.get("ERROR_MSG")
         self.DATE = result.get("DATE")
 
+        # PARAMETERセクションの処理
         parameter = meta_info.get("PARAMETER", {})
         self.LANG = parameter.get("LANG")
         self.DATA_FORMAT = parameter.get("DATA_FORMAT")
 
-        # Store table information
-        table_inf = meta_info.get("METADATA_INF", {}).get("TABLE_INF", {})
+        # METADATA_INFセクションの取得
+        metadata_inf = meta_info.get("METADATA_INF", {})
+        
+        # TABLE_INFセクションの処理
+        table_inf = metadata_inf.get("TABLE_INF", {})
         self.TABLE_INF = table_inf
         
         # Store individual table attributes
@@ -665,9 +703,9 @@ class MetaInfoReader(_eStatReader):
         for attr in table_attributes:
             setattr(self, attr, table_inf.get(attr))
 
-    def _create_class_dataframe(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]], class_obj: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    def _create_class_dataframe_raw(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]], class_obj: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """
-        Create DataFrame from class data.
+        Create raw DataFrame from class data without column transformations.
         
         Parameters
         ----------
@@ -679,7 +717,7 @@ class MetaInfoReader(_eStatReader):
         Returns
         -------
         Optional[pd.DataFrame]
-            DataFrame created from class data, or None if failed
+            Raw DataFrame created from class data, or None if failed
         """
         if not class_data:
             return None
@@ -698,17 +736,233 @@ class MetaInfoReader(_eStatReader):
             if "@level" in df.columns:
                 # Replace empty strings with NaN, then convert to nullable int
                 df = df.assign(**{
-                    "level": lambda d: pd.to_numeric(d["@level"].replace("", pd.NA), errors="coerce").astype("Int64")
+                    "@level": lambda d: pd.to_numeric(d["@level"].replace("", pd.NA), errors="coerce").astype("Int64")
                 })
-            
-            # Rename columns with class name prefix
-            class_name = class_obj.get("@name", "unknown")
-            df = df.rename(columns=lambda col: f"{class_name}{col.lstrip('@')}")
-            
+
             return df
             
         except Exception as e:
-            print(f"Error creating DataFrame for class {class_obj.get('@id', 'unknown')}: {e}")
+            print(f"Error creating raw DataFrame for class {class_obj.get('@id', 'unknown')}: {e}")
+            return None
+
+    def _apply_column_transformations(self, df: pd.DataFrame, class_name: str) -> pd.DataFrame:
+        """
+        Apply column name transformations to DataFrame.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Raw DataFrame
+        class_name : str
+            Class name for prefixing
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with transformed column names
+        """
+        # Create a copy to avoid modifying the original
+        transformed_df = df.copy()
+        
+        # Rename columns with class name prefix
+        if self.prefix_colname_with_classname:
+            # クラス名をプレフィックスとして付加
+            transformed_df = transformed_df.rename(columns=lambda col: f"{class_name}{col.lstrip('@')}")
+        else:
+            # プレフィックスなし、@記号のみ除去
+            transformed_df = transformed_df.rename(columns=lambda col: f"{col.lstrip('@')}")
+
+        if self.lang is None or self.lang != "E":
+            # Convert column names to Japanese
+            transformed_df = colname_to_japanese(transformed_df).rename(columns={"": class_name})
+
+        return transformed_df
+
+    def _create_class_dataframe(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]], class_obj: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """
+        Create DataFrame from class data with full transformations.
+        
+        Parameters
+        ----------
+        class_data : Union[List[Dict[str, Any]], Dict[str, Any]]
+            Class data from API response (can be list or dict)
+        class_obj : Dict[str, Any]
+            Class object metadata
+            
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            DataFrame created from class data, or None if failed
+        """
+        # クラス名の取得（@name → @code の順で試行）
+        class_name = class_obj.get("@name")
+        if not class_name:
+            print(f"警告: クラス名（@name）が見つかりません。処理をスキップします。クラスID: {class_obj.get('@id', 'unknown')}")
+            return None
+        
+        # Get raw dataframe
+        raw_df = self._create_class_dataframe_raw(class_data, class_obj)
+        if raw_df is None:
+            return None
+        
+        # Apply transformations
+        return self._apply_column_transformations(raw_df, class_name)
+
+    def _create_hierarchy_dataframe(self, metainfo: Dict[str, Any], cat_key: int) -> Optional[pd.DataFrame]:
+        """
+        Create a hierarchical DataFrame based on metadata information.
+        
+        This method creates a DataFrame where each row represents a bottom-level node
+        in the hierarchy, with columns for each hierarchical level containing 
+        "code_name" format values. Missing intermediate levels are forward-filled.
+
+        Parameters
+        ----------
+        metainfo : Dict[str, Any]
+            Metadata information containing hierarchical data with @code, @name, 
+            @level, and @parentCode fields
+        cat_key : int
+            Target category key index
+
+        Returns
+        -------
+        Optional[pd.DataFrame]
+            Hierarchical DataFrame with bottom-level nodes as rows and 
+            hierarchical levels as columns, or None if failed
+        """
+        try:
+            # Extract target category metadata
+            class_obj_list = metainfo["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"]
+            
+            if cat_key >= len(class_obj_list):
+                print(f"警告: cat_key {cat_key} が範囲外です。")
+                return None
+                
+            cat_meta = class_obj_list[cat_key]
+            meta_name = cat_meta["@name"]
+            
+            class_data = cat_meta.get("CLASS")
+            if not class_data:
+                print(f"警告: CLASS データが見つかりません。")
+                return None
+            
+            # Handle different types of class_data
+            if isinstance(class_data, list):
+                meta_cls_df = pd.DataFrame(class_data)
+            elif isinstance(class_data, dict):
+                meta_cls_df = pd.DataFrame(pd.Series(class_data)).T
+            else:
+                print(f"CLASS データの型が不正です: {type(class_data)}")
+                return None
+            
+            # Convert level to int
+            if "@level" not in meta_cls_df.columns:
+                print(f"警告: @level 列が見つかりません。")
+                return None
+                
+            meta_cls_df = meta_cls_df.assign(
+                **{"@level": lambda df: pd.to_numeric(df["@level"], errors="coerce").astype("Int64")}
+            )
+            
+            # Create set of parent codes for identifying leaf nodes
+            parent_codes = {
+                row.get("@parentCode") 
+                for _, row in meta_cls_df.iterrows() 
+                if row.get("@parentCode") and str(row.get("@parentCode")).strip()
+            }
+            
+            # Create code-to-record mapping
+            code_to_record = {row["@code"]: row for _, row in meta_cls_df.iterrows()}
+
+            def _get_ancestry_chain(meta_record: Dict[str, Any]) -> Dict[int, str]:
+                """
+                Get ancestry chain for a metadata record.
+                
+                Parameters
+                ----------
+                meta_record : Dict[str, Any]
+                    Metadata record with @code, @name, @level, @parentCode fields
+
+                Returns
+                -------
+                Dict[int, str]
+                    Dictionary mapping level to code for the ancestry chain
+                """
+                chain = {}
+                current_record = meta_record
+                
+                while current_record is not None:
+                    level = current_record["@level"]
+                    chain[level] = current_record["@code"]
+                    parent_code = current_record.get("@parentCode")
+                    
+                    if not parent_code or parent_code not in code_to_record:
+                        break
+                        
+                    current_record = code_to_record[parent_code]
+                
+                return chain
+
+            # Process leaf nodes only
+            max_level = meta_cls_df["@level"].max()
+            chain_rows = []
+            
+            for _, row in meta_cls_df.iterrows():
+                # Skip parent nodes
+                if row["@code"] in parent_codes:
+                    continue
+
+                node_level = row["@level"]
+                ancestry = _get_ancestry_chain(row)
+                row_chain = {}
+                last_code = None
+                
+                # Build hierarchy with forward fill
+                for level in range(1, max_level + 1):
+                    col = f"level{level}"
+                    if level <= node_level:
+                        if level in ancestry:
+                            last_code = ancestry[level]
+                            row_chain[col] = ancestry[level]
+                        else:
+                            row_chain[col] = last_code if self.use_fillna_lv_hierarchy else None
+                    else:
+                        row_chain[col] = None
+                        
+                chain_rows.append(row_chain)
+
+            if not chain_rows:
+                print(f"警告: 階層データが生成されませんでした。")
+                return None
+
+            hierarchy_df = pd.DataFrame(chain_rows)
+
+            # Merge with names to create "code_name" format
+            for level in range(1, max_level + 1):
+                level_col = f"level{level}"
+                name_col = f"{meta_name}階層{level}"
+                
+                name_df = meta_cls_df[["@code", "@name"]].assign(
+                    **{
+                        level_col: meta_cls_df["@code"],
+                        name_col: meta_cls_df["@code"] + "_" + meta_cls_df["@name"]
+                    }
+                )[["@code", name_col]].rename(columns={"@code": level_col})
+                
+                hierarchy_df = hierarchy_df.merge(name_df, on=level_col, how="left")
+
+            # Apply forward fill to both code and name columns if enabled
+            if self.use_fillna_lv_hierarchy:
+                level_cols = [f"level{level}" for level in range(1, max_level + 1)]
+                hierarchy_cols = [f"{meta_name}階層{level}" for level in range(1, max_level + 1)]
+                
+                hierarchy_df[level_cols] = hierarchy_df[level_cols].fillna(method="ffill", axis=1)
+                hierarchy_df[hierarchy_cols] = hierarchy_df[hierarchy_cols].fillna(method="ffill", axis=1)
+
+            return hierarchy_df
+            
+        except Exception as e:
+            print(f"Error creating hierarchy DataFrame: {e}")
             return None
 
     def hierarchy_level(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
@@ -731,41 +985,13 @@ class MetaInfoReader(_eStatReader):
             Hierarchy levels DataFrame
         """
         warnings.warn(
-            "create_hierarchy_dataframe method is deprecated. Use the external create_hierarchy_dataframe function instead.",
+            "hierarchy_level method is deprecated. Use the external create_hierarchy_dataframe function instead.",
             DeprecationWarning,
             stacklevel=2
         )
         # This method is kept for backward compatibility but should not be used
         return pd.DataFrame()
 
-
-
-
-    def create_hierarchy_levels(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
-        """
-        Create hierarchy level DataFrame.
-        
-        .. deprecated:: 
-            This method is deprecated. Use create_hierarchy_dataframe instead.
-        
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Class DataFrame with hierarchy information
-        class_id : str
-            Class ID for column naming
-            
-        Returns
-        -------
-        pd.DataFrame
-            Hierarchy levels DataFrame
-        """
-        warnings.warn(
-            "create_hierarchy_levels is deprecated. Use create_hierarchy_dataframe instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        return self.create_hierarchy_dataframe(df, class_id)
 
 
 class StatsDataReader(_eStatReader):
@@ -1331,7 +1557,7 @@ class StatsDataReader(_eStatReader):
 
         # Apply Japanese naming if requested
         if self.name_or_id == "name":
-            value_df = self.colname_to_japanese(value_df)
+            value_df = colname_to_japanese(value_df)
             value_df = value_df.rename(columns={"value": "値"})
 
         return value_df
@@ -1587,6 +1813,24 @@ class DataCatalogReader(_eStatReader):
 
 
 
+def colname_to_japanese(value: pd.DataFrame) -> pd.DataFrame:
+    # 英語と日本語の対応
+    attrdict = {"value": "値", "code": "コード", "name": "", "level": "階層レベル", 
+        "unit": "単位", "parentCode": "親コード", "addInf": "追加情報", "tab": "表章項目", 
+        "cat": "分類", "area": "地域", "time": "時間軸", "annotation": "注釈記号"  
+    }
+    def _convert(c):
+        for k, v in attrdict.items():
+            if k in c:
+                return c.replace(k, v)
+        return c
+    return value.rename(columns=_convert)
+
+
+
+
+
+
 
 # メタ情報を取得する関数
 def get_metainfo(
@@ -1689,132 +1933,3 @@ def cleansing_statsdata(data: Dict[str, Any]) -> pd.DataFrame:
             .rename(columns={co["@id"]: f"{co['@name']}code"})
         )
     return value
-
-
-
-def create_hierarchy_dataframe(metainfo: Dict[str, Any], cat_key: int) -> pd.DataFrame:
-    """
-    Create a hierarchical DataFrame based on metadata information.
-    
-    This function creates a DataFrame where each row represents a bottom-level node
-    in the hierarchy, with columns for each hierarchical level containing 
-    "code_name" format values. Missing intermediate levels are forward-filled.
-
-    Parameters
-    ----------
-    metainfo : Dict[str, Any]
-        Metadata information containing hierarchical data with @code, @name, 
-        @level, and @parentCode fields
-    cat_key : int
-        Target category key index
-
-    Returns
-    -------
-    pd.DataFrame
-        Hierarchical DataFrame with bottom-level nodes as rows and 
-        hierarchical levels as columns
-        
-    Examples
-    --------
-    >>> hierarchy_df = create_hierarchy_dataframe(metainfo, 0)
-    >>> print(hierarchy_df.head())
-    """
-    # Extract target category metadata
-    cat_meta = metainfo["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"][cat_key]
-    meta_name = cat_meta["@name"]
-    meta_cls_df = pd.DataFrame(cat_meta["CLASS"]).assign(
-        **{"@level": lambda df: df["@level"].astype(int)}
-    )
-    
-    # Create set of parent codes for identifying leaf nodes
-    parent_codes = {
-        row.get("@parentCode") 
-        for _, row in meta_cls_df.iterrows() 
-        if row.get("@parentCode") and str(row.get("@parentCode")).strip()
-    }
-    
-    # Create code-to-record mapping
-    code_to_record = {row["@code"]: row for _, row in meta_cls_df.iterrows()}
-
-    def _get_ancestry_chain(meta_record: Dict[str, Any]) -> Dict[int, str]:
-        """
-        Get ancestry chain for a metadata record.
-        
-        Parameters
-        ----------
-        meta_record : Dict[str, Any]
-            Metadata record with @code, @name, @level, @parentCode fields
-
-        Returns
-        -------
-        Dict[int, str]
-            Dictionary mapping level to code for the ancestry chain
-        """
-        chain = {}
-        current_record = meta_record
-        
-        while current_record is not None:
-            level = current_record["@level"]
-            chain[level] = current_record["@code"]
-            parent_code = current_record.get("@parentCode")
-            
-            if not parent_code or parent_code not in code_to_record:
-                break
-                
-            current_record = code_to_record[parent_code]
-        
-        return chain
-
-    # Process leaf nodes only
-    max_level = meta_cls_df["@level"].max()
-    chain_rows = []
-    
-    for _, row in meta_cls_df.iterrows():
-        # Skip parent nodes
-        if row["@code"] in parent_codes:
-            continue
-
-        node_level = row["@level"]
-        ancestry = _get_ancestry_chain(row)
-        row_chain = {}
-        last_code = None
-        
-        # Build hierarchy with forward fill
-        for level in range(1, max_level + 1):
-            col = f"level{level}"
-            if level <= node_level:
-                if level in ancestry:
-                    last_code = ancestry[level]
-                    row_chain[col] = ancestry[level]
-                else:
-                    row_chain[col] = last_code  # Forward fill
-            else:
-                row_chain[col] = None
-                
-        chain_rows.append(row_chain)
-
-    hierarchy_df = pd.DataFrame(chain_rows)
-
-    # Merge with names to create "code_name" format
-    for level in range(1, max_level + 1):
-        level_col = f"level{level}"
-        name_col = f"{meta_name}階層{level}"
-        
-        name_df = meta_cls_df[["@code", "@name"]].assign(
-            **{
-                level_col: meta_cls_df["@code"],
-                name_col: meta_cls_df["@code"] + "_" + meta_cls_df["@name"]
-            }
-        )[["@code", name_col]].rename(columns={"@code": level_col})
-        
-        hierarchy_df = hierarchy_df.merge(name_df, on=level_col, how="left")
-
-    # Apply forward fill to both code and name columns
-    level_cols = [f"level{level}" for level in range(1, max_level + 1)]
-    hierarchy_cols = [f"{meta_name}階層{level}" for level in range(1, max_level + 1)]
-    
-    hierarchy_df[level_cols] = hierarchy_df[level_cols].fillna(method="ffill", axis=1)
-    hierarchy_df[hierarchy_cols] = hierarchy_df[hierarchy_cols].fillna(method="ffill", axis=1)
-
-    return hierarchy_df
-
