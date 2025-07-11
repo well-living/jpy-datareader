@@ -70,6 +70,9 @@ class _eStatReader(_BaseReader):
         Request timeout in seconds.
     session : Optional[requests.Session], default None
         requests.sessions.Session instance to be used.
+    dotenv_path : Optional[str], default None
+        Path to .env file for loading environment variables.
+        If None, will look for .estat_env, .env_estat, or .env in the current directory.
     """
 
     def __init__(
@@ -81,6 +84,7 @@ class _eStatReader(_BaseReader):
         pause: float = 0.1,
         timeout: int = 30,
         session: Optional[requests.Session] = None,
+        dotenv_path: Optional[str] = None,
     ) -> None:
         super().__init__(
             retry_count=retry_count,
@@ -91,11 +95,11 @@ class _eStatReader(_BaseReader):
 
         # Try to get API key from various sources
         if api_key is None:
-            api_key = self._get_api_key_from_env()
-        
+            api_key = self._get_api_key_from_env(dotenv_path)
+                
         if not api_key or not isinstance(api_key, str):
             raise ValueError(
-                "The eStat API key must be provided either "
+                "The e-Stat Application ID must be provided either "
                 "through the api_key variable or through one of the "
                 "following environment variables: "
                 "E_STAT_APPLICATION_ID, ESTAT_APPLICATION_ID, "
@@ -108,10 +112,16 @@ class _eStatReader(_BaseReader):
         self.explanationGetFlg = explanationGetFlg
         self.lang = lang
 
-    def _get_api_key_from_env(self) -> Optional[str]:
+    def _get_api_key_from_env(self, dotenv_path: Optional[str] = None) -> Optional[str]:
         """
         Get API key from environment variables or .env files.
+        First tries dotenv files, then falls back to environment variables.
         
+        Parameters
+        ----------
+        dotenv_path : Optional[str]
+            Path to specific .env file to load. If None, tries default files.
+            
         Returns
         -------
         Optional[str]
@@ -129,26 +139,36 @@ class _eStatReader(_BaseReader):
             "ESTAT_API_KEY"
         ]
         
-        # First try regular environment variables
-        for var_name in env_vars:
-            api_key = os.getenv(var_name)
-            if api_key:
-                return api_key
-        
-        # If dotenv is available, try loading from .env files
+        # First try dotenv files if available
         if DOTENV_AVAILABLE:
-            env_files = [".estat_env", ".env_estat", ".env"]
-            
-            for env_file in env_files:
-                if Path(env_file).exists():
-                    load_dotenv(env_file)
-                    
-                    # Try all environment variables after loading each file
+            if dotenv_path:
+                # If specific dotenv path is provided
+                if Path(dotenv_path).exists():
+                    load_dotenv(dotenv_path)
+                    # Try all environment variables after loading the specified file
                     for var_name in env_vars:
                         api_key = os.getenv(var_name)
                         if api_key:
                             return api_key
+            else:
+                # Try default .env files
+                env_files = [".estat_env", ".env_estat", ".env"]
+                
+                for env_file in env_files:
+                    if Path(env_file).exists():
+                        load_dotenv(env_file)
+                        # Try all environment variables after loading each file
+                        for var_name in env_vars:
+                            api_key = os.getenv(var_name)
+                            if api_key:
+                                return api_key
         
+        # Fallback to regular environment variables
+        for var_name in env_vars:
+            api_key = os.getenv(var_name)
+            if api_key:
+                return api_key
+                
         return None
 
     def get_url(self, path: str = "getStatsData") -> str:
@@ -208,6 +228,9 @@ class StatsListReader(_eStatReader):
         e-Stat application ID (appId)
     lang : Optional[str], default None
         Language for retrieved data. Either "J" (Japanese) or "E" (English).
+        取得するデータの言語を 以下のいずれかを指定して下さい。
+        ・J：日本語 (省略値)
+        ・E：英語
     explanationGetFlg : Optional[str], default None
         Flag for getting explanation data ("Y" or "N")
         統計表及び、提供統計、提供分類の解説を取得するか否かを指定
@@ -221,6 +244,9 @@ class StatsListReader(_eStatReader):
         Request timeout in seconds
     session : Optional[requests.Session], default None
         requests.sessions.Session instance to be used
+    dotenv_path : Optional[str], default None
+        Path to .env file for loading environment variables.
+        If None, will look for .estat_env, .env_estat, or .env in the current directory.
     surveyYears : Optional[Union[str, int]], default None
         Survey years filter
         調査年月
@@ -304,6 +330,7 @@ class StatsListReader(_eStatReader):
         pause: float = 0.1,
         timeout: int = 300,
         session: Optional[requests.Session] = None,
+        dotenv_path: Optional[str] = None,
         surveyYears: Optional[Union[str, int]] = None,
         openYears: Optional[Union[str, int]] = None,
         statsField: Optional[Union[str, int]] = None,
@@ -324,6 +351,7 @@ class StatsListReader(_eStatReader):
             pause=pause,
             timeout=timeout,
             session=session,
+            dotenv_path=dotenv_path,
         )
 
         self.surveyYears = surveyYears
@@ -374,6 +402,20 @@ class StatsListReader(_eStatReader):
         """Read data from connector"""
         try:
             return self._read_one_data(self.url, self.params)
+        finally:
+            self.close()
+
+    def read_json(self) -> Dict[str, Any]:
+        """Read data from connector and return as raw JSON."""
+        try:
+            response = self._get_response(self.url, params=self.params)
+            json_data = response.json()
+            
+            # Store response metadata as instance attributes
+            response_data = json_data.get("GET_STATS_LIST", {})
+            self._store_response_metadata(response_data)
+            
+            return json_data
         finally:
             self.close()
 
@@ -438,9 +480,9 @@ class StatsListReader(_eStatReader):
 
 class MetaInfoReader(_eStatReader):
     """
-    Reader for eStat metadata API.
+    Reader for e-Stat meta infomation API.
     メタ情報取得 API
-    https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_3
+    URL: https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_3
     
     Parameters
     ----------
@@ -448,6 +490,7 @@ class MetaInfoReader(_eStatReader):
         e-Stat application ID (appId)
     statsDataId : Union[str, int]
         Statistics data ID
+        「統計表情報取得」で得られる統計表IDです。
     name_or_id : str, default "name"
         Whether to use "name" or "id" for column naming
     lvhierarchy : bool, default False
@@ -456,6 +499,9 @@ class MetaInfoReader(_eStatReader):
         Whether to fill NA values in hierarchy levels
     explanationGetFlg : Optional[str], default None
         Flag for getting explanation data ("Y" or "N")
+        統計表及び、提供統計、提供分類、各事項の解説を取得するか否かを以下のいずれかから指定して下さい。
+        ・Y：取得する (省略値)
+        ・N：取得しない
     retry_count : int, default 3
         Number of times to retry query request
     pause : float, default 0.1
@@ -464,6 +510,9 @@ class MetaInfoReader(_eStatReader):
         Request timeout in seconds
     session : Optional[requests.Session], default None
         requests.sessions.Session instance to be used
+    dotenv_path : Optional[str], default None
+        Path to .env file for loading environment variables.
+        If None, will look for .estat_env, .env_estat, or .env in the current directory.
     """
 
     def __init__(
@@ -478,6 +527,7 @@ class MetaInfoReader(_eStatReader):
         pause: float = 0.1,
         timeout: int = 30,
         session: Optional[requests.Session] = None,
+        dotenv_path: Optional[str] = None,
     ) -> None:
         super().__init__(
             api_key=api_key,
@@ -486,6 +536,7 @@ class MetaInfoReader(_eStatReader):
             pause=pause,
             timeout=timeout,
             session=session,
+            dotenv_path=dotenv_path,
         )
 
         self.statsDataId = statsDataId
@@ -510,42 +561,85 @@ class MetaInfoReader(_eStatReader):
 
         return pdict
     
-
-    def read(self):
-        """Read data from connector"""
+    def read(self) -> List[Union[pd.DataFrame, List[pd.DataFrame]]]:
+        """
+        Read data from connector and return list of DataFrames.
+        
+        Returns
+        -------
+        List[Union[pd.DataFrame, List[pd.DataFrame]]]
+            List of DataFrames for each CLASS_OBJ. If lvhierarchy=True,
+            returns list of [class_df, hierarchy_df] pairs.
+        """
         try:
-            return self._read_one_data(self.url, self.params)
+            return self.read_class_obj_dfs()
         finally:
             self.close()
 
-    def _read_one_data(self, url: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Read metadata from specified URL.
-        
-        Parameters
-        ----------
-        url : str
-            Target URL
-        params : Dict[str, Any]
-            Request parameters
+    def read_json(self) -> Dict[str, Any]:
+        """Read data from connector and return as raw JSON."""
+        try:
+            response = self._get_response(self.url, params=self.params)
+            json_data = response.json()
             
+            # Store response metadata as instance attributes
+            meta_info = json_data.get("GET_META_INFO", {})
+            self._store_params_in_attrs(meta_info)
+            
+            return json_data
+        finally:
+            self.close()
+
+
+    def read_class_obj_dfs(self) -> List[Union[pd.DataFrame, List[pd.DataFrame]]]:
+        """
+        Read and process CLASS_OBJ data into DataFrames.
+        
         Returns
         -------
-        Dict[str, Any]
-            Processed metadata information
+        List[Union[pd.DataFrame, List[pd.DataFrame]]]
+            List of processed DataFrames
         """
-        out = self._get_response(url, params=params).json()
-
-        # Store response metadata
-        meta_info = out.get("GET_META_INFO", {})
-        self._store_metadata_attributes(meta_info)
-
-        # Process class objects
+        response = self._get_response(self.url, params=self.params)
+        json_data = response.json()
+        
+        # Store response metadata as instance attributes
+        meta_info = json_data.get("GET_META_INFO", {})
+        self._store_params_in_attrs(meta_info)
+        
+        # Get class objects
         class_obj = meta_info.get("METADATA_INF", {}).get("CLASS_INF", {}).get("CLASS_OBJ", [])
-        return self._process_class_objects(class_obj)
+        
+        if not isinstance(class_obj, list):
+            print("CLASS_OBJはlist型ではありません。")
+            return []
+        
+        result_dfs = {}
+        
+        for i, co in enumerate(class_obj):
+            class_data = co.get("CLASS")
+            class_df = self._create_class_dataframe(class_data, co)
+            
+            if class_df is None:
+                continue
+                
+            # クラス名を取得（複数の方法で試行）
+            class_name = co.get("@name") or co.get("@id") or f"class_{i}"
+            
+            # Check if hierarchy processing is needed
+            is_hierarchy = self.lvhierarchy and len(class_df["level"].unique()) > 1
+            
+            if is_hierarchy:
+                # Use the external function to create hierarchy
+                hierarchy_df = create_hierarchy_dataframe(json_data, i)
+                result_dfs[class_name] = [class_df, hierarchy_df]
+            else:
+                result_dfs[class_name] = class_df
+        
+        return result_dfs
 
-    def _store_metadata_attributes(self, meta_info: Dict[str, Any]) -> None:
-        """Store metadata attributes as instance variables."""
+    def _store_params_in_attrs(self, meta_info: Dict[str, Any]) -> None:
+        """Store params in attributes as instance variables."""
         result = meta_info.get("RESULT", {})
         self.STATUS = result.get("STATUS")
         self.ERROR_MSG = result.get("ERROR_MSG")
@@ -571,98 +665,58 @@ class MetaInfoReader(_eStatReader):
         for attr in table_attributes:
             setattr(self, attr, table_inf.get(attr))
 
-
-    def _process_class_objects(self, class_obj: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Process class objects into DataFrames.
-        
-        Parameters
-        ----------
-        class_obj : List[Dict[str, Any]]
-            List of class objects from metadata
-            
-        Returns
-        -------
-        Dict[str, Any]
-            Dictionary of processed class DataFrames
-        """
-        dfs = {}
-        
-        if not isinstance(class_obj, list):
-            print("CLASS_OBJはlist型ではありません。")
-            return dfs
-
-        for co in class_obj:
-            class_data = co.get("CLASS")
-            class_df = self._create_class_dataframe(class_data, co)
-            
-            if class_df is None:
-                continue
-                
-            # Check if hierarchy processing is needed
-            is_hierarchy = self.lvhierarchy and len(class_df["level"].unique()) > 1
-            
-            if is_hierarchy:
-                levels = self.create_hierarchy_levels(class_df, co["@id"])
-                dfs[co["@id"]] = [class_df, levels]
-            else:
-                dfs[co["@id"]] = class_df
-
-        return dfs
-
-
-    def _create_class_dataframe(
-        self, 
-        class_data: Union[List[Dict], Dict], 
-        class_obj: Dict[str, Any]
-    ) -> Optional[pd.DataFrame]:
+    def _create_class_dataframe(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]], class_obj: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """
         Create DataFrame from class data.
         
         Parameters
         ----------
-        class_data : Union[List[Dict], Dict]
-            Class data from API response
+        class_data : Union[List[Dict[str, Any]], Dict[str, Any]]
+            Class data from API response (can be list or dict)
         class_obj : Dict[str, Any]
             Class object metadata
             
         Returns
         -------
         Optional[pd.DataFrame]
-            Processed class DataFrame or None if invalid
+            DataFrame created from class data, or None if failed
         """
-        if isinstance(class_data, list):
-            class_df = pd.DataFrame(class_data)
-        elif isinstance(class_data, dict):
-            class_df = pd.DataFrame(pd.Series(class_data)).T
-        else:
-            print(f"{class_obj['@name']}はlist型でもdict型でもありません。")
+        if not class_data:
+            return None
+            
+        try:
+            # Handle different types of class_data
+            if isinstance(class_data, list):
+                df = pd.DataFrame(class_data)
+            elif isinstance(class_data, dict):
+                df = pd.DataFrame(pd.Series(class_data)).T
+            else:
+                print(f"CLASS_INF>CLASS_OBJ>CLASSの型: {type(class_data)}")
+                return None
+            
+            # Convert level to int if exists, handle empty strings
+            if "@level" in df.columns:
+                # Replace empty strings with NaN, then convert to nullable int
+                df = df.assign(**{
+                    "level": lambda d: pd.to_numeric(d["@level"].replace("", pd.NA), errors="coerce").astype("Int64")
+                })
+            
+            # Rename columns with class name prefix
+            class_name = class_obj.get("@name", "unknown")
+            df = df.rename(columns=lambda col: f"{class_name}{col.lstrip('@')}")
+            
+            return df
+            
+        except Exception as e:
+            print(f"Error creating DataFrame for class {class_obj.get('@id', 'unknown')}: {e}")
             return None
 
-        # Clean column names
-        class_df = class_df.assign(**{
-            col.lstrip("@"): class_df[col] for col in class_df.columns
-        }).drop(columns=class_df.columns.tolist())
-
-        # Apply naming convention
-        if self.name_or_id == "name":
-            class_df = class_df.assign(**{
-                f"{class_obj['@name']}{col}": class_df[col] 
-                for col in class_df.columns
-            }).drop(columns=class_df.columns.tolist())
-            class_df = self.colname_to_japanese(class_df)
-        else:
-            class_df = class_df.assign(**{
-                f"{class_obj['@id']}_{col}": class_df[col] 
-                for col in class_df.columns
-            }).drop(columns=class_df.columns.tolist())
-
-        return class_df
-    
-
-    def create_hierarchy_dataframe(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
+    def hierarchy_level(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
         """
         Create hierarchy level DataFrame.
+        
+        .. deprecated:: 
+            This method is deprecated. Use the external create_hierarchy_dataframe function instead.
         
         Parameters
         ----------
@@ -676,31 +730,16 @@ class MetaInfoReader(_eStatReader):
         pd.DataFrame
             Hierarchy levels DataFrame
         """
-        # Extract target category metadata from stored metadata
-        class_obj = None
-        for co in self.CLASS_OBJ:
-            if co["@id"] == class_id:
-                class_obj = co
-                break
-        
-        if class_obj is None:
-            raise ValueError(f"Class ID {class_id} not found in metadata")
-        
-        # Create the hierarchy dataframe using the utility function
-        from jpy_datareader.estat import create_hierarchy_dataframe
-        
-        # Prepare metainfo structure for the utility function
-        metainfo = {
-            "GET_META_INFO": {
-                "METADATA_INF": {
-                    "CLASS_INF": {
-                        "CLASS_OBJ": [class_obj]
-                    }
-                }
-            }
-        }
-        
-        return create_hierarchy_dataframe(metainfo, 0)
+        warnings.warn(
+            "create_hierarchy_dataframe method is deprecated. Use the external create_hierarchy_dataframe function instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        # This method is kept for backward compatibility but should not be used
+        return pd.DataFrame()
+
+
+
 
     def create_hierarchy_levels(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
         """
@@ -733,7 +772,7 @@ class StatsDataReader(_eStatReader):
     """
     Reader for eStat statistics data API.
     統計データ取得 API
-    https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_4
+    URL: https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_4
 
     
     Parameters
@@ -754,6 +793,8 @@ class StatsDataReader(_eStatReader):
         Request timeout in seconds
     session : Optional[requests.Session], default None
         requests.sessions.Session instance to be used
+    dotenv_path : Optional[str], default None
+        Path to .env file for loading environment variables.
     Various filter parameters for data selection (lvTab, cdTab, etc.)
     limit : int, default 100000
         Limit for pagination
@@ -771,6 +812,7 @@ class StatsDataReader(_eStatReader):
         pause: float = 0.1,
         timeout: int = 30,
         session: Optional[requests.Session] = None,
+        dotenv_path: Optional[str] = None,
         # Filter parameters
         lvTab: Optional[Union[str, int]] = None,
         cdTab: Optional[Union[str, int]] = None,
@@ -811,6 +853,7 @@ class StatsDataReader(_eStatReader):
             pause=pause,
             timeout=timeout,
             session=session,
+            dotenv_path=dotenv_path,
         )
 
         self.statsDataId = statsDataId
@@ -896,6 +939,27 @@ class StatsDataReader(_eStatReader):
                     return self._split_by_units(data)
                 else:
                     return self._denormalize_data(data)
+        finally:
+            self.close()
+
+    def read_json(self) -> Dict[str, Any]:
+        """
+        Read data from connector and return as raw JSON.
+        
+        Returns
+        -------
+        Dict[str, Any]
+            Raw JSON response from the API
+        """
+        try:
+            response = self._get_response(self.url, params=self.params)
+            json_data = response.json()
+            
+            # Store response metadata as instance attributes
+            stats_data = json_data.get("GET_STATS_DATA", {})
+            self._store_stats_metadata(stats_data)
+            
+            return json_data
         finally:
             self.close()
 
@@ -1377,6 +1441,8 @@ class DataCatalogReader(_eStatReader):
         Request timeout in seconds
     session : Optional[requests.Session], default None
         requests.sessions.Session instance to be used
+    dotenv_path : Optional[str], default None
+        Path to .env file for loading environment variables.
     Various filter parameters for catalog search
     limit : int, default 100000
         Limit for pagination
@@ -1390,6 +1456,7 @@ class DataCatalogReader(_eStatReader):
         pause: float = 0.1,
         timeout: int = 30,
         session: Optional[requests.Session] = None,
+        dotenv_path: Optional[str] = None,
         surveyYears: Optional[Union[str, int]] = None,
         openYears: Optional[Union[str, int]] = None,
         statsField: Optional[Union[str, int]] = None,
@@ -1410,6 +1477,7 @@ class DataCatalogReader(_eStatReader):
             pause=pause,
             timeout=timeout,
             session=session,
+            dotenv_path=dotenv_path,
         )
 
         self.surveyYears = surveyYears
@@ -1623,7 +1691,7 @@ def cleansing_statsdata(data: Dict[str, Any]) -> pd.DataFrame:
     return value
 
 
-# Utility functions for modern data processing
+
 def create_hierarchy_dataframe(metainfo: Dict[str, Any], cat_key: int) -> pd.DataFrame:
     """
     Create a hierarchical DataFrame based on metadata information.

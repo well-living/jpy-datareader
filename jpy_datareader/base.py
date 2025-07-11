@@ -1,7 +1,7 @@
 # jpy_datareader/base.py
 import time
 import urllib
-from typing import Optional, Dict, Any, Union
+from typing import Dict, Any, Optional
 
 import pandas as pd
 import requests
@@ -10,8 +10,6 @@ from jpy_datareader._utils import (
     RemoteDataError,
     _init_session,
 )
-
-testVar = 5
 
 
 class _BaseReader:
@@ -39,6 +37,10 @@ class _BaseReader:
     ) -> None:
         if not isinstance(retry_count, int) or retry_count < 0:
             raise ValueError("'retry_count' must be integer larger than 0")
+        if not isinstance(pause, (int, float)) or pause < 0:
+            raise ValueError("'pause' must be a positive number")
+        if not isinstance(timeout, int) or timeout <= 0:
+            raise ValueError("'timeout' must be a positive integer")
         
         self.retry_count = retry_count
         self.pause = pause
@@ -68,6 +70,14 @@ class _BaseReader:
         finally:
             self.close()
 
+    def read_json(self) -> Dict[str, Any]:
+        """Read data from connector and return as raw JSON."""
+        try:
+            response = self._get_response(self.url, params=self.params)
+            return response.json()
+        finally:
+            self.close()
+    
     def _read_one_data(self, url: str, params: Optional[Dict[str, Any]]) -> pd.DataFrame:
         """Read one data from specified URL."""
         out = self._get_response(url, params=params).json()
@@ -123,6 +133,7 @@ class _BaseReader:
             if self._output_error(response):
                 break
 
+        # If we reach here, we have exhausted all retries.
         if params is not None and len(params) > 0:
             url = url + "?" + urllib.parse.urlencode(query=params)
         msg = f"Unable to read URL: {url}"
@@ -161,3 +172,20 @@ class _BaseReader:
             rs.index.name = rs.index.name.encode("ascii", "ignore").decode()
 
         return rs
+
+    def _output_error(self, response: requests.Response) -> bool:
+        """
+        Handle HTTP error responses.
+        
+        Parameters
+        ----------
+        response : requests.Response
+            Response object to check for errors
+            
+        Returns
+        -------
+        bool
+            True if error should stop retry loop, False otherwise
+        """
+        # Override in subclasses for specific error handling
+        return False
