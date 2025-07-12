@@ -1057,8 +1057,6 @@ class StatsDataReader(_eStatReader):
     Various filter parameters for data selection (lvTab, cdTab, etc.)
     limit : int, default 100000
         Limit for pagination
-    max_position : int, default 500000
-        Maximum position for pagination to prevent infinite loops
     na_values : Any, default np.nan
         Value to use for missing data
     """
@@ -1102,7 +1100,6 @@ class StatsDataReader(_eStatReader):
         cdCat03To: Optional[Union[str, int]] = None,
         startPosition: Optional[Union[str, int]] = None,
         limit: int = LIMIT,
-        max_position: int = 500000,
         metaGetFlg: Optional[str] = None,
         cntGetFlg: Optional[str] = None,
         annotationGetFlg: Optional[str] = None,
@@ -1134,8 +1131,12 @@ class StatsDataReader(_eStatReader):
         }
         
         self.startPosition = startPosition
-        self.limit = limit
-        self.max_position = max_position
+        if limit > LIMIT:
+            self.limit = LIMIT
+            self.max = limit
+        else:
+            self.limit = limit
+            self.max = None
         self.metaGetFlg = metaGetFlg
         self.cntGetFlg = cntGetFlg
         self.annotationGetFlg = annotationGetFlg
@@ -1284,6 +1285,8 @@ class StatsDataReader(_eStatReader):
             data = self._read(self.url, self.params)
             if split_by_unit:
                 return self._split_by_units(data)
+            else:
+                return data
         finally:
             self.close()
 
@@ -1329,30 +1332,75 @@ class StatsDataReader(_eStatReader):
         """
         dfs = []
         
-        # First data retrieval
-        first_data = self._get_response(url, params=params).json()
-        dfs.append(self._process_single_response(first_data))
+        try:
+            # First data retrieval
+            first_data = self._get_response(url, params=params).json()
+            first_df = self._process_single_response(first_data)
+            
+            if not first_df.empty:
+                dfs.append(first_df)
+            else:
+                print("Warning: First data retrieval returned empty DataFrame")
+            
+            # Continue fetching data using NEXT_KEY
+            while "NEXT_KEY" in first_data.get("GET_STATS_DATA", {}).get("STATISTICAL_DATA", {}).get("RESULT_INF", {}):
+                try:
+                    # Get next position from NEXT_KEY
+                    start_position = first_data["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["NEXT_KEY"]
+                    print("NEXT_KEY: ", start_position)
+                    
+                    # Break if position exceeds maximum
+                    if int(start_position) > self.max:
+                        print(f"Warning: NEXT_KEY position {start_position} exceeds limit {self.max}. Stopping pagination.")
+                        break
+                    
+                    # Update params with new start position
+                    next_params = params.copy()
+                    next_params["startPosition"] = start_position
+                    
+                    # Calculate remaining records and adjust limit if necessary
+                    remaining_records = self.max - int(start_position) + 1
+                    if remaining_records < self.limit:
+                        next_params["limit"] = remaining_records
+                        print(f"Adjusting limit to {remaining_records} for remaining records")
+                    
+                    # Fetch next data
+                    next_data = self._get_response(url, params=next_params).json()
+                    next_df = self._process_single_response(next_data)
+                    
+                    if not next_df.empty:
+                        dfs.append(next_df)
+                        first_data = next_data  # Update for next iteration
+                    else:
+                        print(f"Warning: Data retrieval at position {start_position} returned empty DataFrame")
+                        break
+                    
+                except KeyError as e:
+                    print(f"Error: Missing key in pagination response: {e}")
+                    print("Stopping pagination and returning data collected so far.")
+                    break
+                except Exception as e:
+                    print(f"Error during pagination at position {start_position}: {e}")
+                    print("Stopping pagination and returning data collected so far.")
+                    break
         
-        # Continue fetching data using NEXT_KEY
-        while "NEXT_KEY" in first_data.get("GET_STATS_DATA", {}).get("STATISTICAL_DATA", {}).get("RESULT_INF", {}):
-            # Get next position from NEXT_KEY
-            start_position = first_data["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["NEXT_KEY"]
-            print("NEXT_KEY: ", start_position)
-            
-            # Break if position exceeds maximum
-            if int(start_position) > self.max_position:
-                break
-            
-            # Update params with new start position
-            next_params = params.copy()
-            next_params["startPosition"] = start_position
-            
-            # Fetch next data
-            first_data = self._get_response(url, params=next_params).json()
-            dfs.append(self._process_single_response(first_data))
+        except Exception as e:
+            print(f"Error in initial data retrieval: {e}")
+            print("Returning empty DataFrame or data collected so far.")
         
         # Combine all DataFrames
-        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        if dfs:
+            try:
+                result_df = pd.concat(dfs, ignore_index=True)
+                print(f"Successfully combined {len(dfs)} DataFrames with total {len(result_df)} rows")
+                return result_df
+            except Exception as e:
+                print(f"Error combining DataFrames: {e}")
+                print("Returning first available DataFrame or empty DataFrame")
+                return dfs[0] if dfs else pd.DataFrame()
+        else:
+            print("No data retrieved. Returning empty DataFrame.")
+            return pd.DataFrame()
 
     def _process_single_response(self, response_data: Dict[str, Any]) -> pd.DataFrame:
         """
@@ -1381,7 +1429,7 @@ class StatsDataReader(_eStatReader):
         value_df = self._merge_class_metadata(value_df, response_data)
 
         # Apply naming conventions
-        value_df = self._apply_colname_transformations(value_df)
+        value_df = self._apply_colname_transformations(value_df, response_data)
 
 
         return value_df
