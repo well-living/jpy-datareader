@@ -22,8 +22,9 @@ from jpy_datareader.base import _BaseReader
 
 _version = "3.0"
 _BASE_URL = f"https://api.e-stat.go.jp/rest/{_version}/app/json"
+LIMIT = 100000
 
-ATTR_DICT = {
+TRANSLATION_MAPPING = {
     "value": "値", 
     "code": "コード", 
     "name": "", 
@@ -94,6 +95,7 @@ class _eStatReader(_BaseReader):
         )
 
         # Try to get API key from various sources
+        self.dotenv_path = dotenv_path
         if api_key is None:
             api_key = self._get_api_key_from_env(dotenv_path)
                 
@@ -391,7 +393,7 @@ class StatsListReader(_eStatReader):
             
             # Store response metadata as instance attributes
             response_data = json_data.get("GET_STATS_LIST", {})
-            self._store_response_metadata(response_data)
+            self._store_params_in_attrs(response_data)
             
             return json_data
         finally:
@@ -417,7 +419,7 @@ class StatsListReader(_eStatReader):
 
         # Store response metadata as instance attributes
         response_data = out.get("GET_STATS_LIST", {})
-        self._store_response_metadata(response_data)
+        self._store_params_in_attrs(response_data)
 
         # Extract and process table information
         table_inf = pd.json_normalize(
@@ -432,7 +434,7 @@ class StatsListReader(_eStatReader):
 
         return table_inf
     
-    def _store_response_metadata(self, response_data: Dict[str, Any]) -> None:
+    def _store_params_in_attrs(self, response_data: Dict[str, Any]) -> None:
         """Store response metadata as instance attributes."""
         # Store RESULT metadata
         result = response_data.get("RESULT", {})
@@ -557,7 +559,7 @@ class MetaInfoReader(_eStatReader):
             DataFrame with the most rows from all CLASS_OBJ DataFrames (excluding 'time')
         """
         try:
-            result_dfs = self.read_class_obj_dfs()
+            result_dfs = self.read_class_objs()
             
             if not result_dfs:
                 return pd.DataFrame()
@@ -582,20 +584,7 @@ class MetaInfoReader(_eStatReader):
         finally:
             self.close()
 
-    def read_json(self) -> Dict[str, Any]:
-        """Read data from connector and return as raw JSON."""
-        try:
-            response = self._get_response(self.url, params=self.params)
-            json_data = response.json()
-            
-            # Store response metadata as instance attributes
-            self._store_params_in_attrs(json_data)
-            
-            return json_data 
-        finally:
-            self.close()
-
-    def read_class_obj_dfs(self) -> List[Dict[str, Any]]:
+    def read_class_objs(self) -> List[Dict[str, Any]]:
         """
         Read and process CLASS_OBJ data into DataFrames.
         CLASS_OBJ dictionary's keys: ['@id', '@name', 'CLASS']
@@ -629,7 +618,7 @@ class MetaInfoReader(_eStatReader):
                 print(f"警告: クラスID（@id）が見つかりません。処理をスキップします。")
                 continue
             
-            # クラス名を取得（複数の方法で試行）
+            # クラス名を取得
             class_name = co.get("@name")
             if not class_name:
                 print(f"警告: クラス名（@name）が見つかりません。処理をスキップします。クラスID: {class_id}")
@@ -638,7 +627,7 @@ class MetaInfoReader(_eStatReader):
             class_data = co.get("CLASS")
             
             # 列名変換前の生データフレームを作成
-            class_df_raw = self._create_class_dataframe_raw(class_data, co)
+            class_df_raw = self._create_class_dataframe(class_data)
             
             if class_df_raw is None:
                 continue
@@ -649,10 +638,10 @@ class MetaInfoReader(_eStatReader):
                 "@level" in class_df_raw.columns and 
                 len(class_df_raw["@level"].unique()) > 1):
                 # Use the method to create hierarchy
-                hierarchy_df = self._create_hierarchy_dataframe(json_data, i)
+                hierarchy_df = self.create_hierarchy_dataframe(json_data, i)
 
             # 列名変換を実行
-            class_df = self._apply_column_transformations(class_df_raw, class_name)
+            class_df = self._apply_colname_transformations(class_df_raw, class_name)
 
             # Create result dictionary
             result_dict = {
@@ -667,6 +656,19 @@ class MetaInfoReader(_eStatReader):
             result_dfs.append(result_dict)
         
         return result_dfs
+
+    def read_json(self) -> Dict[str, Any]:
+        """Read data from connector and return as raw JSON."""
+        try:
+            response = self._get_response(self.url, params=self.params)
+            json_data = response.json()
+            
+            # Store response metadata as instance attributes
+            self._store_params_in_attrs(json_data)
+            
+            return json_data 
+        finally:
+            self.close()
 
     def _store_params_in_attrs(self, json_data: Dict[str, Any]) -> None:
         """Store params in attributes as instance variables."""
@@ -703,7 +705,7 @@ class MetaInfoReader(_eStatReader):
         for attr in table_attributes:
             setattr(self, attr, table_inf.get(attr))
 
-    def _create_class_dataframe_raw(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]], class_obj: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    def _create_class_dataframe(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]]) -> Optional[pd.DataFrame]:
         """
         Create raw DataFrame from class data without column transformations.
         
@@ -711,8 +713,6 @@ class MetaInfoReader(_eStatReader):
         ----------
         class_data : Union[List[Dict[str, Any]], Dict[str, Any]]
             Class data from API response (can be list or dict)
-        class_obj : Dict[str, Any]
-            Class object metadata
             
         Returns
         -------
@@ -742,10 +742,10 @@ class MetaInfoReader(_eStatReader):
             return df
             
         except Exception as e:
-            print(f"Error creating raw DataFrame for class {class_obj.get('@id', 'unknown')}: {e}")
+            print(f"Error creating raw DataFrame: {e}")
             return None
 
-    def _apply_column_transformations(self, df: pd.DataFrame, class_name: str) -> pd.DataFrame:
+    def _apply_colname_transformations(self, df: pd.DataFrame, class_name: Optional[str]=None) -> pd.DataFrame:
         """
         Apply column name transformations to DataFrame.
         
@@ -753,7 +753,7 @@ class MetaInfoReader(_eStatReader):
         ----------
         df : pd.DataFrame
             Raw DataFrame
-        class_name : str
+        class_name : Optional[str]
             Class name for prefixing
             
         Returns
@@ -778,7 +778,7 @@ class MetaInfoReader(_eStatReader):
 
         return transformed_df
 
-    def _create_class_dataframe(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]], class_obj: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    def create_class_dataframe(self, class_data: Union[List[Dict[str, Any]], Dict[str, Any]], class_obj: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """
         Create DataFrame from class data with full transformations.
         
@@ -794,21 +794,17 @@ class MetaInfoReader(_eStatReader):
         Optional[pd.DataFrame]
             DataFrame created from class data, or None if failed
         """
-        # クラス名の取得（@name → @code の順で試行）
-        class_name = class_obj.get("@name")
-        if not class_name:
-            print(f"警告: クラス名（@name）が見つかりません。処理をスキップします。クラスID: {class_obj.get('@id', 'unknown')}")
-            return None
-        
         # Get raw dataframe
-        raw_df = self._create_class_dataframe_raw(class_data, class_obj)
+        raw_df = self._create_class_dataframe(class_data)
         if raw_df is None:
             return None
         
+        # クラス名の取得
+        class_name = class_obj.get("@name")
         # Apply transformations
-        return self._apply_column_transformations(raw_df, class_name)
+        return self._apply_colname_transformations(raw_df, class_name)
 
-    def _create_hierarchy_dataframe(self, metainfo: Dict[str, Any], cat_key: int) -> Optional[pd.DataFrame]:
+    def create_hierarchy_dataframe(self, metainfo: Dict[str, Any], cat_key: int) -> Optional[pd.DataFrame]:
         """
         Create a hierarchical DataFrame based on metadata information.
         
@@ -956,8 +952,8 @@ class MetaInfoReader(_eStatReader):
                 level_cols = [f"level{level}" for level in range(1, max_level + 1)]
                 hierarchy_cols = [f"{meta_name}階層{level}" for level in range(1, max_level + 1)]
                 
-                hierarchy_df[level_cols] = hierarchy_df[level_cols].fillna(method="ffill", axis=1)
-                hierarchy_df[hierarchy_cols] = hierarchy_df[hierarchy_cols].fillna(method="ffill", axis=1)
+                hierarchy_df[level_cols] = hierarchy_df[level_cols].ffill(axis=1)
+                hierarchy_df[hierarchy_cols] = hierarchy_df[hierarchy_cols].ffill(axis=1)
 
             return hierarchy_df
             
@@ -965,7 +961,7 @@ class MetaInfoReader(_eStatReader):
             print(f"Error creating hierarchy DataFrame: {e}")
             return None
 
-    def hierarchy_level(self, df: pd.DataFrame, class_id: str) -> pd.DataFrame:
+    def hierarchy_level(self, df: pd.DataFrame, id: str) -> pd.DataFrame:
         """
         Create hierarchy level DataFrame.
         
@@ -990,13 +986,23 @@ class MetaInfoReader(_eStatReader):
             stacklevel=2
         )
         # This method is kept for backward compatibility but should not be used
-        return pd.DataFrame()
-
+        levels = df[df["level"] == "1"][["code"]]
+        levels.columns = ["level1"]
+        for lv in np.sort(df["level"].unique().astype(int))[1:]:
+            child = df[df["level"] == str(lv)][["parentCode", "code"]]
+            child.columns = ["level" + str(lv - 1), "level" + str(lv)]
+            levels = levels.merge(child, on="level" + str(lv - 1), how="left")
+        if self.use_fillna_lv_hierarchy:
+            levels = levels.fillna(method="ffill", axis=1)
+        levels.columns = list(
+            map(lambda x: id + "_" + x, levels.columns.values.tolist())
+        )
+        return levels
 
 
 class StatsDataReader(_eStatReader):
     """
-    Reader for eStat statistics data API.
+    Reader for e-Stat statistics data API.
     統計データ取得 API
     URL: https://www.e-stat.go.jp/api/api-info/e-stat-manual3-0#api_3_4
 
@@ -1007,10 +1013,37 @@ class StatsDataReader(_eStatReader):
         e-Stat application ID (appId)
     statsDataId : Union[str, int]
         Statistics data ID
-    name_or_id : str, default "name"
-        Whether to use "name" or "id" for column naming
+    prefix_colname_with_classname : bool, default True
+        Whether to prefix column names with class names
+    lang : Optional[str], default None
+        Language for retrieved data. Either "J" (Japanese) or "E" (English).
+        取得するデータの言語を 以下のいずれかを指定して下さい。
+        ・J：日本語 (省略値)
+        ・E：英語
     explanationGetFlg : Optional[str], default None
-        Flag for getting explanation data ("Y" or "N")
+        解説情報有無－統計表及び、提供統計、提供分類、各事項の解説を取得するか否かを以下のいずれかから指定して下さい。
+        ・Y：取得する (省略値)
+        ・N：取得しない
+    metaGetFlg : Optional[str], default None
+        メタ情報有無－統計データと一緒にメタ情報を取得するか否かを以下のいずれかから指定して下さい。
+        ・Y：取得する (省略値)
+        ・N：取得しない
+        CSV形式のデータ呼び出しの場合、本パラメータは無効（N：取得しない）です。
+    cntGetFlg : Optional[str], default None
+        件数取得フラグ－指定した場合、件数のみ取得できます。metaGetFlg=Yの場合は、メタ情報も同時に返却されます。
+        ・Y：件数のみ取得する。統計データは取得しない。
+        ・N：件数及び統計データを取得する。(省略値)
+        CSV形式のデータ呼び出しの場合、本パラメータは無効（N：件数及び統計データを取得する）です。
+    annotationGetFlg : Optional[str], default None
+        注釈情報有無－数値データの注釈を取得するか否かを以下のいずれかから指定して下さい。
+        ・Y：取得する (省略値)
+        ・N：取得しない
+    replaceSpChar : int, default 2
+        特殊文字の置換－特殊文字を置換するか否かを設定します。
+        ・置換しない：0（デフォルト）
+        ・0（ゼロ）に置換する：1
+        ・NULL（長さ0の文字列、空文字)に置換する：2
+        ・NA（文字列）に置換する：3
     retry_count : int, default 3
         Number of times to retry query request
     pause : float, default 0.1
@@ -1024,6 +1057,8 @@ class StatsDataReader(_eStatReader):
     Various filter parameters for data selection (lvTab, cdTab, etc.)
     limit : int, default 100000
         Limit for pagination
+    max_position : int, default 500000
+        Maximum position for pagination to prevent infinite loops
     na_values : Any, default np.nan
         Value to use for missing data
     """
@@ -1032,7 +1067,8 @@ class StatsDataReader(_eStatReader):
         self,
         api_key: str,
         statsDataId: Union[str, int],
-        name_or_id: str = "name",
+        prefix_colname_with_classname: bool = True,
+        lang: Optional[str] = None,
         explanationGetFlg: Optional[str] = None,
         retry_count: int = 3,
         pause: float = 0.1,
@@ -1065,7 +1101,8 @@ class StatsDataReader(_eStatReader):
         cdCat03From: Optional[Union[str, int]] = None,
         cdCat03To: Optional[Union[str, int]] = None,
         startPosition: Optional[Union[str, int]] = None,
-        limit: int = 100000,
+        limit: int = LIMIT,
+        max_position: int = 500000,
         metaGetFlg: Optional[str] = None,
         cntGetFlg: Optional[str] = None,
         annotationGetFlg: Optional[str] = None,
@@ -1074,6 +1111,7 @@ class StatsDataReader(_eStatReader):
     ) -> None:
         super().__init__(
             api_key=api_key,
+            lang=lang,
             explanationGetFlg=explanationGetFlg,
             retry_count=retry_count,
             pause=pause,
@@ -1083,7 +1121,7 @@ class StatsDataReader(_eStatReader):
         )
 
         self.statsDataId = statsDataId
-        self.name_or_id = name_or_id
+        self.prefix_colname_with_classname = prefix_colname_with_classname
         
         # Store all filter parameters
         self.filter_params = {
@@ -1097,16 +1135,24 @@ class StatsDataReader(_eStatReader):
         
         self.startPosition = startPosition
         self.limit = limit
+        self.max_position = max_position
         self.metaGetFlg = metaGetFlg
         self.cntGetFlg = cntGetFlg
         self.annotationGetFlg = annotationGetFlg
         self.replaceSpChar = replaceSpChar
         self.na_values = na_values
+        # Initialize metainfo attribute
+        self.metainfo = None
 
     @property
     def url(self) -> str:
         """API URL for getStatsData."""
         return self.get_url("getStatsData")
+
+    @property
+    def metainfo_url(self) -> str:
+        """API URL for getMetaInfo."""
+        return self.get_url("getMetaInfo")
 
     @property
     def params(self) -> Dict[str, Any]:
@@ -1140,33 +1186,65 @@ class StatsDataReader(_eStatReader):
 
         return pdict
 
-    def read(self, normal: bool = True, split_units: bool = False) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+    def get_metadata(self) -> Dict[str, Any]:
         """
-        Read data from connector.
+        Get metadata for the statistics data using MetaInfoReader.
         
-        Parameters
-        ----------
-        normal : bool, default True
-            Whether to return normalized data
-        split_units : bool, default False
-            Whether to split data by units
-            
         Returns
         -------
-        Union[pd.DataFrame, Dict[str, pd.DataFrame]]
-            Statistics data as DataFrame or dictionary of DataFrames
+        Dict[str, Any]
+            Metadata information
         """
-        try:
-            data = self._read(self.url, self.params)
-            if normal:
-                return data
-            else:
-                if split_units:
-                    return self._split_by_units(data)
-                else:
-                    return self._denormalize_data(data)
-        finally:
-            self.close()
+        # Create MetaInfoReader instance with same parameters
+        metainfo_reader = MetaInfoReader(
+            api_key=self.api_key,
+            statsDataId=self.statsDataId,
+            prefix_colname_with_classname=self.prefix_colname_with_classname,
+            lang=self.lang,
+            explanationGetFlg=self.explanationGetFlg,
+            retry_count=self.retry_count,
+            pause=self.pause,
+            timeout=self.timeout,
+            session=self.session,
+            dotenv_path=self.dotenv_path
+        )
+        
+        # Get metadata using MetaInfoReader
+        metadata_json = metainfo_reader.read_json()
+        
+        # Store metadata as instance attribute
+        self.metainfo = metadata_json
+        
+        # Copy important attributes from MetaInfoReader to this instance
+        metadata_attributes = [
+            "STATUS", "ERROR_MSG", "DATE", "LANG", "DATA_FORMAT", "TABLE_INF",
+            "STAT_NAME", "GOV_ORG", "STATISTICS_NAME", "TITLE", "CYCLE",
+            "SURVEY_DATE", "OPEN_DATE", "SMALL_AREA", "COLLECT_AREA",
+            "MAIN_CATEGORY", "SUB_CATEGORY", "OVERALL_TOTAL_NUMBER",
+            "UPDATED_DATE", "STATISTICS_NAME_SPEC", "TABULATION_SUB_CATEGORY1",
+            "DESCRIPTION", "TITLE_SPEC"
+        ]
+        
+        for attr in metadata_attributes:
+            if hasattr(metainfo_reader, attr):
+                setattr(self, attr, getattr(metainfo_reader, attr))
+        
+        return metadata_json
+
+    def _get_total_number(self) -> int:
+        """
+        Get total number of records from metadata.
+        
+        Returns
+        -------
+        int
+            Total number of records
+        """
+        if not hasattr(self, 'metainfo') or self.metainfo is None:
+            self.get_metadata()
+        
+        return int(self.OVERALL_TOTAL_NUMBER) if hasattr(self, 'OVERALL_TOTAL_NUMBER') and self.OVERALL_TOTAL_NUMBER else 0
+
 
     def read_json(self) -> Dict[str, Any]:
         """
@@ -1182,10 +1260,30 @@ class StatsDataReader(_eStatReader):
             json_data = response.json()
             
             # Store response metadata as instance attributes
-            stats_data = json_data.get("GET_STATS_DATA", {})
-            self._store_stats_metadata(stats_data)
+            self._store_params_in_attrs(json_data)
             
             return json_data
+        finally:
+            self.close()
+
+    def read(self, split_by_unit: bool = False) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+        """
+        Read data from connector.
+        
+        Parameters
+        ----------
+        split_by_unit : bool, default False
+            Whether to split data by units
+            
+        Returns
+        -------
+        Union[pd.DataFrame, Dict[str, pd.DataFrame]]
+            Statistics data as DataFrame or dictionary of DataFrames
+        """
+        try:
+            data = self._read(self.url, self.params)
+            if split_by_unit:
+                return self._split_by_units(data)
         finally:
             self.close()
 
@@ -1205,14 +1303,17 @@ class StatsDataReader(_eStatReader):
         pd.DataFrame
             Combined statistics data
         """
-        if self.limit is None:
+        # Check if data exceeds 100,000 records
+        total_number = self._get_total_number()
+        
+        if total_number > LIMIT:
             return self._read_with_pagination(url, params)
         else:
             return self._read_one_data(url, params)
 
     def _read_with_pagination(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
         """
-        Read data with automatic pagination for large datasets.
+        Read data with automatic pagination for large datasets using NEXT_KEY.
         
         Parameters
         ----------
@@ -1226,121 +1327,64 @@ class StatsDataReader(_eStatReader):
         pd.DataFrame
             Combined statistics data
         """
-        # First, get total count
-        test_params = {**params, "limit": 1}
-        out = self._get_response(url, params=test_params).json()
-        total_number = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["TABLE_INF"]["OVERALL_TOTAL_NUMBER"]
-
-        if total_number <= 100000:
-            return self._read_one_data(url, params)
-
-        # For large datasets, split by classification
-        return self._read_with_classification_split(url, params, out, total_number)
-
-    def _read_with_classification_split(
-        self, 
-        url: str, 
-        params: Dict[str, Any], 
-        sample_response: Dict[str, Any],
-        total_number: int
-    ) -> pd.DataFrame:
-        """
-        Read large datasets by splitting on classification dimensions.
-        
-        Parameters
-        ----------
-        url : str
-            Target URL
-        params : Dict[str, Any]
-            Request parameters
-        sample_response : Dict[str, Any]
-            Sample response for determining split strategy
-        total_number : int
-            Total number of records
-            
-        Returns
-        -------
-        pd.DataFrame
-            Combined statistics data
-        """
-        ptrans = {
-            "tab": "cdTab", "time": "cdTime", "area": "cdArea",
-            "cat01": "cdCat01", "cat02": "cdCat02", "cat03": "cdCat03"
-        }
-
-        # Determine split strategy based on classification sizes
-        class_obj = sample_response["GET_STATS_DATA"]["STATISTICAL_DATA"]["CLASS_INF"]["CLASS_OBJ"]
-        cls_info = []
-        
-        for n, co in enumerate(class_obj):
-            if isinstance(co.get("CLASS"), list):
-                cls_info.append([n, co["@id"], len(co["CLASS"])])
-        
-        cls_df = pd.DataFrame(cls_info, columns=["index", "id", "size"]).sort_values("size", ascending=False)
-
-        # Calculate split parameters
-        param_names = []
-        codes = []
-        remaining_total = total_number
-        
-        for _, row in cls_df.iterrows():
-            param_name = ptrans.get(row["id"])
-            if param_name:
-                param_names.append(param_name)
-                class_codes = [
-                    entry["@code"] for entry in 
-                    class_obj[row["index"]]["CLASS"]
-                ]
-                codes.append(class_codes)
-                remaining_total //= row["size"]
-                if remaining_total < 100000:
-                    break
-
-        # Generate parameter combinations
-        codes_product = self._generate_parameter_combinations(codes)
-        
-        # Fetch data for each combination
         dfs = []
-        for combination in codes_product:
-            split_params = params.copy()
-            for i, param_name in enumerate(param_names):
-                split_params[param_name] = combination[i]
+        
+        # First data retrieval
+        first_data = self._get_response(url, params=params).json()
+        dfs.append(self._process_single_response(first_data))
+        
+        # Continue fetching data using NEXT_KEY
+        while "NEXT_KEY" in first_data.get("GET_STATS_DATA", {}).get("STATISTICAL_DATA", {}).get("RESULT_INF", {}):
+            # Get next position from NEXT_KEY
+            start_position = first_data["GET_STATS_DATA"]["STATISTICAL_DATA"]["RESULT_INF"]["NEXT_KEY"]
+            print("NEXT_KEY: ", start_position)
             
-            try:
-                df = self._read_one_data(url, split_params)
-                dfs.append(df)
-            except Exception as e:
-                print(f"Error reading data for combination {combination}: {e}")
-                continue
+            # Break if position exceeds maximum
+            if int(start_position) > self.max_position:
+                break
+            
+            # Update params with new start position
+            next_params = params.copy()
+            next_params["startPosition"] = start_position
+            
+            # Fetch next data
+            first_data = self._get_response(url, params=next_params).json()
+            dfs.append(self._process_single_response(first_data))
+        
+        # Combine all DataFrames
+        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-        return pd.concat(dfs, axis=0, ignore_index=True) if dfs else pd.DataFrame()
-
-    def _generate_parameter_combinations(self, codes: List[List[str]]) -> List[Tuple[str, ...]]:
+    def _process_single_response(self, response_data: Dict[str, Any]) -> pd.DataFrame:
         """
-        Generate all combinations of parameter codes.
+        Process a single API response and return DataFrame.
         
         Parameters
         ----------
-        codes : List[List[str]]
-            List of code lists for each parameter
+        response_data : Dict[str, Any]
+            Single API response data
             
         Returns
         -------
-        List[Tuple[str, ...]]
-            List of parameter combinations
+        pd.DataFrame
+            Processed DataFrame
         """
-        if not codes:
-            return []
+        # Store metadata
+        self._store_params_in_attrs(response_data)
         
-        result = [[]]
-        for code_list in codes:
-            result = [
-                existing + [code] 
-                for existing in result 
-                for code in code_list
-            ]
-        
-        return [tuple(combination) for combination in result]
+        # Process VALUE data using the new method
+        value_df = self._statsjson_to_dataframe(response_data)
+
+        # Handle missing values
+        value_df = self._handle_missing_values(value_df, response_data)
+
+        # Process class objects and merge metadata
+        value_df = self._merge_class_metadata(value_df, response_data)
+
+        # Apply naming conventions
+        value_df = self._apply_colname_transformations(value_df)
+
+
+        return value_df
 
     def _read_one_data(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
         """
@@ -1359,33 +1403,11 @@ class StatsDataReader(_eStatReader):
             Processed statistics data
         """
         out = self._get_response(url, params=params).json()
+        return self._process_single_response(out)
 
-        # Store response metadata
-        self._store_stats_metadata(out)
-
-        # Process VALUE data
-        value_data = out["GET_STATS_DATA"]["STATISTICAL_DATA"]["DATA_INF"]["VALUE"]
-        value_df = pd.DataFrame(value_data)
-        
-        # Clean column names
-        self.attrlist = [col.lstrip("@") for col in value_df.columns]
-        value_df.columns = self.attrlist
-
-        # Handle missing values
-        value_df = self._handle_missing_values(value_df, out)
-
-        # Process class objects and merge metadata
-        value_df = self._merge_class_metadata(value_df, out)
-
-        # Apply naming conventions
-        value_df = self._apply_naming_conventions(value_df)
-
-        return value_df
-
-
-    def _store_stats_metadata(self, out: Dict[str, Any]) -> None:
+    def _store_params_in_attrs(self, json_data: Dict[str, Any]) -> None:
         """Store statistics metadata as instance attributes."""
-        stats_data = out.get("GET_STATS_DATA", {})
+        stats_data = json_data.get("GET_STATS_DATA", {})
         
         # Store result metadata
         result = stats_data.get("RESULT", {})
@@ -1429,6 +1451,33 @@ class StatsDataReader(_eStatReader):
         name_parts = [self.STATISTICS_NAME, self.TITLE, cycle, self.GOV_ORG]
         self.StatsDataName = "_".join(filter(None, name_parts)).replace(" ", "_")
 
+    def _statsjson_to_dataframe(self, data: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Convert statistics JSON data to DataFrame.
+        
+        Parameters
+        ----------
+        data : Dict[str, Any]
+            JSON response data from e-Stat API
+            
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with cleaned column names
+            ['tab', 'cat01', 'cat02', 'cat03', 'area', 'time', 'unit', 'value']
+        """
+        value_df = pd.json_normalize(
+            data,
+            record_path=["GET_STATS_DATA", "STATISTICAL_DATA", "DATA_INF", "VALUE"]
+        ).rename(
+            columns=lambda col: col.lstrip("@").replace("$", "value")
+        )
+        
+        # Store attribute list for later use
+        self.category_columns = [col for col in value_df.columns if col != "value"]
+        
+        return value_df
+    
     def _handle_missing_values(self, value_df: pd.DataFrame, out: Dict[str, Any]) -> pd.DataFrame:
         """
         Handle missing values in the data.
@@ -1457,13 +1506,13 @@ class StatsDataReader(_eStatReader):
             
             if note_chars:
                 value_df = value_df.assign(**{
-                    "$": value_df["$"].replace(note_chars, self.na_values)
+                    "value": value_df["value"].replace(note_chars, self.na_values)
                 })
         
         # Convert to float if na_values is NaN
         if pd.isna(self.na_values):
             value_df = value_df.assign(**{
-                "$": pd.to_numeric(value_df["$"], errors="coerce")
+                "value": pd.to_numeric(value_df["value"], errors="coerce")
             })
             
         return value_df
@@ -1482,19 +1531,37 @@ class StatsDataReader(_eStatReader):
         Returns
         -------
         pd.DataFrame
-            DataFrame with merged metadata
+            DataFrame with merged metadata (without column name conversion)
+            ['tab_code', 'cat01_code', 'cat02_code', 'cat03_code', 'area_code',
+            'time_code', 'unit_code', 'value', 'tab_name', 'tab_level',
+            'cat01_name', 'cat01_level', 'cat01_unit', 'cat01_parentCode',
+            'cat02_name', 'cat02_level', 'cat03_name', 'cat03_level', 'area_name',
+            'area_level', 'time_name', 'time_level']
         """
-        class_obj = out.get("GET_STATS_DATA", {}).get("STATISTICAL_DATA", {}).get("CLASS_INF", {}).get("CLASS_OBJ", [])
-        
+        class_obj = out.get("GET_STATS_DATA", {}) \
+                    .get("STATISTICAL_DATA", {}) \
+                    .get("CLASS_INF", {}) \
+                    .get("CLASS_OBJ", [])
+
         if not isinstance(class_obj, list):
             print("CLASS_OBJはlist型ではありません。")
             return value_df
+
+        # Add "_code" suffix to attribute columns, but skip if col == "unit"
+        new_columns = {}
+        for col in value_df.columns:
+            if col in self.category_columns and col != "unit":
+                new_columns[col] = f"{col}_code"
+            else:
+                new_columns[col] = col
+
+        value_df = value_df.rename(columns=new_columns)
 
         for co in class_obj:
             class_data = co.get("CLASS")
             if not class_data:
                 continue
-                
+
             # Convert class data to DataFrame
             if isinstance(class_data, list):
                 class_df = pd.DataFrame(class_data)
@@ -1503,112 +1570,75 @@ class StatsDataReader(_eStatReader):
             else:
                 continue
 
-            # Set up merge
+            # Set up merge - only basic column cleaning
             class_df = class_df.set_index("@code")
-            
-            # Apply naming convention
-            if self.name_or_id == "id":
-                class_df = class_df.assign(**{
-                    f"{co['@id']}_{col.lstrip('@')}": class_df[col]
-                    for col in class_df.columns
-                }).drop(columns=class_df.columns.tolist())
-                self.tabcol = "tab_name"
-            else:
-                class_df = class_df.assign(**{
-                    f"{co['@name']}{col.lstrip('@')}": class_df[col]
-                    for col in class_df.columns
-                }).drop(columns=class_df.columns.tolist())
-                self.tabcol = "表章項目名"
+
+            # Basic column name cleaning with class-specific prefixes to avoid conflicts
+            class_id = co["@id"]
+            class_df = class_df.rename(columns=lambda c: f"{class_id}_{c.lstrip('@')}")
 
             # Merge with value data
             value_df = value_df.merge(
-                class_df, 
-                left_on=co["@id"], 
-                right_index=True, 
+                class_df,
+                left_on=f"{class_id}_code",
+                right_index=True,
                 how="left"
             )
 
         return value_df
 
-    def _apply_naming_conventions(self, value_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Apply naming conventions to the DataFrame.
-        
-        Parameters
-        ----------
-        value_df : pd.DataFrame
-            Input DataFrame
-            
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with proper naming conventions
-        """
-        # Add "_code" suffix to attribute columns
-        new_columns = {}
-        for col in value_df.columns:
-            if col in self.attrlist:
-                new_columns[col] = f"{col}_code"
-            else:
-                new_columns[col] = col
-        
-        value_df = value_df.rename(columns=new_columns)
-        value_df = value_df.rename(columns={"$_code": "value"})
+    
 
-        # Apply Japanese naming if requested
-        if self.name_or_id == "name":
+    def _apply_colname_transformations(self, value_df: pd.DataFrame, out: Dict[str, Any]) -> pd.DataFrame:
+
+        """
+        クラスＩＤ→表示名マップ（CLASS_NAME_MAP）を先に作成し、
+        FIELD_MAPPING はそれを使って動的に生成する実装例。
+        """
+        class_objs = (
+            out.get("GET_STATS_DATA", {})
+            .get("STATISTICAL_DATA", {})
+            .get("CLASS_INF", {})
+            .get("CLASS_OBJ", [])
+        )
+        if not isinstance(class_objs, list):
+            return value_df
+
+        # クラスＩＤ→クラス名マップだけを先に作成
+        #    例: {"tab": "表章項目", "cat01": "用途分類", ...}
+        self.CLASS_NAME_MAPPING = {
+            co["@id"]: co.get("@name", co["@id"])
+            for co in class_objs
+            if "@id" in co
+        }
+
+        # 
+        columns_mapping = {}
+        for orig in value_df.columns:
+            if "_" not in orig:
+                continue
+            prefix, suffix = orig.split("_", 1)
+            # prefix が CLASS_NAME_MAP にある場合だけ変換
+            if prefix in self.CLASS_NAME_MAPPING:
+                display = self.CLASS_NAME_MAPPING[prefix]
+                # 'code','name','level','unit' ... などをそのまま suffix として連結
+                columns_mapping[orig] = f"{display}{suffix}"
+
+        # tab_colname 設定（既存ロジック）
+        if self.lang == "E":
+            self.tab_colname = "tab_name"
+        else:
+            self.tab_colname = "表章項目"
+
+        # リネーム実行
+        if columns_mapping:
+            value_df = value_df.rename(columns=columns_mapping)
+
+        # 日本語化ヘルパー適用（lang!="E" のとき）
+        if self.lang != "E":
             value_df = colname_to_japanese(value_df)
-            value_df = value_df.rename(columns={"value": "値"})
 
         return value_df
-
-    def _denormalize_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Denormalize data by removing code/level columns and unstacking.
-        
-        Parameters
-        ----------
-        data : pd.DataFrame
-            Input normalized data
-            
-        Returns
-        -------
-        pd.DataFrame
-            Denormalized data
-        """
-        # Define columns to drop based on naming convention
-        if self.name_or_id == "name":
-            drop_patterns = ["コード", "階層レベル", "unit", "単位", "親コード", "追加情報"]
-        else:
-            drop_patterns = ["code", "level", "unit", "parentCode", "addInf"]
-        
-        # Drop unnecessary columns
-        cols_to_drop = [
-            col for col in data.columns 
-            if any(pattern in col for pattern in drop_patterns)
-        ]
-        df = data.drop(columns=cols_to_drop)
-
-        # Unstack if tabcol is in index
-        if hasattr(self, 'tabcol') and self.tabcol in df.index.names:
-            if self.name_or_id == "name":
-                name_cols = [col for col in df.columns if "名" in col]
-            else:
-                name_cols = [col for col in df.columns if "name" in col]
-            
-            if name_cols:
-                df = df.set_index(name_cols)
-                df = df.unstack(self.tabcol)
-                df.columns = [col[1] for col in df.columns]
-                df = df.reset_index()
-
-        # Clean column names
-        df = df.assign(**{
-            col.replace("_name", "").rstrip("名"): df[col]
-            for col in df.columns
-        }).drop(columns=df.columns.tolist())
-
-        return df
 
     def _split_by_units(self, data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
@@ -1626,26 +1656,22 @@ class StatsDataReader(_eStatReader):
         """
         # Handle unit columns
         unit_col = None
-        if "単位コード" in data.columns:
-            unit_col = "単位コード"
-        elif "unit_code" in data.columns:
-            unit_col = "unit_code"
-        
-        if unit_col:
-            data = data.assign(**{
-                "unit": data[unit_col].fillna("単位なし")
-            }).drop(columns=[unit_col])
-        else:
-            data = data.assign(unit="単位なし")
+        if "単位" in data.columns:
+            unit_col = "単位"
+        elif "unit" in data.columns:
+            unit_col = "unit"
 
         # Split by unit
         datasets = {}
-        for unit in data["unit"].unique():
-            unit_data = data[data["unit"] == unit]
-            datasets[unit] = self._denormalize_data(unit_data)
+        for unit in data[unit_col].unique():
+            unit_data = data[data[unit_col] == unit]
+            datasets[unit] = unit_data
         
         return datasets
+    
 
+    
+    
 class DataCatalogReader(_eStatReader):
     """
     Reader for eStat data catalog API.
@@ -1693,7 +1719,7 @@ class DataCatalogReader(_eStatReader):
         startPosition: Optional[Union[str, int]] = None,
         catalogId: Optional[Union[str, int]] = None,
         resourceId: Optional[Union[str, int]] = None,
-        limit: int = 100000,
+        limit: int = LIMIT,
         updatedDate: Optional[Union[str, int]] = None,
     ) -> None:
         super().__init__(
@@ -1815,12 +1841,8 @@ class DataCatalogReader(_eStatReader):
 
 def colname_to_japanese(value: pd.DataFrame) -> pd.DataFrame:
     # 英語と日本語の対応
-    attrdict = {"value": "値", "code": "コード", "name": "", "level": "階層レベル", 
-        "unit": "単位", "parentCode": "親コード", "addInf": "追加情報", "tab": "表章項目", 
-        "cat": "分類", "area": "地域", "time": "時間軸", "annotation": "注釈記号"  
-    }
     def _convert(c):
-        for k, v in attrdict.items():
+        for k, v in TRANSLATION_MAPPING.items():
             if k in c:
                 return c.replace(k, v)
         return c
