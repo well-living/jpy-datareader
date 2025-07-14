@@ -421,9 +421,14 @@ class StatsListReader(_eStatReader):
         response_data = out.get("GET_STATS_LIST", {})
         self._store_params_in_attrs(response_data)
 
+        table_inf_list = response_data.get("DATALIST_INF", {}).get("TABLE_INF", [])
+
+        if isinstance(table_inf_list, dict):
+            # If TABLE_INF is a single dictionary, convert it to a list
+            table_inf_list = [table_inf_list]
         # Extract and process table information
         table_inf = pd.json_normalize(
-            out, record_path=["GET_STATS_LIST", "DATALIST_INF", "TABLE_INF"], sep="_"
+            table_inf_list, sep="_"
         )
         
         # Clean column names
