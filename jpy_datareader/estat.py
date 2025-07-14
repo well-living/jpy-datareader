@@ -1122,6 +1122,11 @@ class StatsDataReader(_eStatReader):
             dotenv_path=dotenv_path,
         )
 
+        if api_key is None:
+            raise TypeError("api_key cannot be None")
+        # または
+        if not isinstance(api_key, str):
+            raise TypeError("api_key must be a string")
         self.statsDataId = statsDataId
         self.prefix_colname_with_classname = prefix_colname_with_classname
         
@@ -1547,6 +1552,14 @@ class StatsDataReader(_eStatReader):
         pd.DataFrame
             DataFrame with missing values handled
         """
+        # 空のDataFrameの場合は早期リターン
+        if value_df.empty:
+            return value_df
+        
+        # value列が存在しない場合は早期リターン
+        if 'value' not in value_df.columns:
+            return value_df
+    
         note = out.get("GET_STATS_DATA", {}).get("STATISTICAL_DATA", {}).get("DATA_INF", {}).get("NOTE")
         
         if note:
@@ -1657,6 +1670,12 @@ class StatsDataReader(_eStatReader):
         if not isinstance(class_objs, list):
             return value_df
 
+        # 英語モードの場合は変換をスキップ
+        if self.lang == "E":
+            # tab_colname設定のみ
+            self.tab_colname = "tab_name"
+            return value_df
+    
         # クラスＩＤ→クラス名マップだけを先に作成
         #    例: {"tab": "表章項目", "cat01": "用途分類", ...}
         self.CLASS_NAME_MAPPING = {
