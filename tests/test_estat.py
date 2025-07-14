@@ -653,6 +653,7 @@ class TestStatsListReader:
         assert len(csv_lines) == 13
 
 
+
 class TestMetaInfoReader:
     """MetaInfoReaderクラスの単体テスト"""
 
@@ -664,11 +665,11 @@ class TestMetaInfoReader:
     @pytest.fixture
     def mock_stats_data_id(self):
         """テスト用の統計データID"""
-        return "0000030001"
+        return "0002070010"
 
     @pytest.fixture
     def expected_metainfo_response(self):
-        """正常系のレスポンスデータ"""
+        """実際のAPIレスポンス構造に基づくテストデータ"""
         return {
             "GET_META_INFO": {
                 "RESULT": {
@@ -682,10 +683,10 @@ class TestMetaInfoReader:
                 },
                 "METADATA_INF": {
                     "TABLE_INF": {
-                        "STAT_NAME": "国勢調査",
+                        "STAT_NAME": "家計調査",
                         "GOV_ORG": "総務省",
-                        "STATISTICS_NAME": "平成27年国勢調査",
-                        "TITLE": "人口等基本集計"
+                        "STATISTICS_NAME": "家計調査年報（家計収支編）",
+                        "TITLE": "世帯属性別表"
                     },
                     "CLASS_INF": {
                         "CLASS_OBJ": [
@@ -694,37 +695,142 @@ class TestMetaInfoReader:
                                 "@name": "表章項目",
                                 "CLASS": [
                                     {
-                                        "@code": "001",
-                                        "@name": "人口",
-                                        "@level": "1",
-                                        "@unit": "人"
-                                    },
-                                    {
-                                        "@code": "002", 
-                                        "@name": "世帯数",
-                                        "@level": "1",
-                                        "@unit": "世帯"
+                                        "@code": "01",
+                                        "@name": "金額",
+                                        "@level": "",
+                                        "@unit": "円"
                                     }
                                 ]
                             },
                             {
                                 "@id": "cat01",
-                                "@name": "男女",
+                                "@name": "用途分類",
                                 "CLASS": [
                                     {
-                                        "@code": "001",
-                                        "@name": "総数",
-                                        "@level": "1"
+                                        "@code": "012",
+                                        "@name": "平均畳数（持家）",
+                                        "@level": "1",
+                                        "@unit": "畳"
                                     },
                                     {
-                                        "@code": "002",
-                                        "@name": "男",
-                                        "@level": "1"
+                                        "@code": "013",
+                                        "@name": "持家で住宅ローンを支払っている世帯の割合",
+                                        "@level": "1",
+                                        "@unit": "％"
                                     },
                                     {
-                                        "@code": "003",
-                                        "@name": "女",
-                                        "@level": "1"
+                                        "@code": "014",
+                                        "@name": "平均畳数（うち住宅ローンを支払っている世帯）",
+                                        "@level": "1",
+                                        "@unit": "畳"
+                                    },
+                                    {
+                                        "@code": "015",
+                                        "@name": "家賃・地代を支払っている世帯の割合",
+                                        "@level": "1",
+                                        "@unit": "％"
+                                    },
+                                    {
+                                        "@code": "016",
+                                        "@name": "平均畳数（家賃・地代を支払っている世帯）",
+                                        "@level": "1",
+                                        "@unit": "畳"
+                                    },
+                                    {
+                                        "@code": "017",
+                                        "@name": "農林漁家世帯の割合",
+                                        "@level": "1",
+                                        "@unit": "％"
+                                    },
+                                    {
+                                        "@code": "018",
+                                        "@name": "受取",
+                                        "@level": "1",
+                                        "@unit": "円"
+                                    },
+                                    {
+                                        "@code": "019",
+                                        "@name": "実収入",
+                                        "@level": "2",
+                                        "@unit": "円",
+                                        "@parentCode": "018"
+                                    },
+                                    {
+                                        "@code": "020",
+                                        "@name": "経常収入",
+                                        "@level": "3",
+                                        "@unit": "円",
+                                        "@parentCode": "019"
+                                    },
+                                    {
+                                        "@code": "021",
+                                        "@name": "勤め先収入",
+                                        "@level": "4",
+                                        "@unit": "円",
+                                        "@parentCode": "020"
+                                    },
+                                    {
+                                        "@code": "022",
+                                        "@name": "世帯主収入",
+                                        "@level": "5",
+                                        "@unit": "円",
+                                        "@parentCode": "021"
+                                    },
+                                    {
+                                        "@code": "023",
+                                        "@name": "世帯主収入（男）",
+                                        "@level": "7",
+                                        "@unit": "円",
+                                        "@parentCode": "022"
+                                    },
+                                    {
+                                        "@code": "024",
+                                        "@name": "定期収入",
+                                        "@level": "6",
+                                        "@unit": "円",
+                                        "@parentCode": "022"
+                                    },
+                                    {
+                                        "@code": "025",
+                                        "@name": "臨時収入",
+                                        "@level": "7",
+                                        "@unit": "円",
+                                        "@parentCode": "267"
+                                    },
+                                    {
+                                        "@code": "026",
+                                        "@name": "賞与",
+                                        "@level": "7",
+                                        "@unit": "円",
+                                        "@parentCode": "267"
+                                    },
+                                    {
+                                        "@code": "027",
+                                        "@name": "世帯主の配偶者の収入",
+                                        "@level": "5",
+                                        "@unit": "円",
+                                        "@parentCode": "021"
+                                    },
+                                    {
+                                        "@code": "028",
+                                        "@name": "世帯主の配偶者の収入（女）",
+                                        "@level": "7",
+                                        "@unit": "円",
+                                        "@parentCode": "027"
+                                    },
+                                    {
+                                        "@code": "029",
+                                        "@name": "他の世帯員収入",
+                                        "@level": "5",
+                                        "@unit": "円",
+                                        "@parentCode": "021"
+                                    },
+                                    {
+                                        "@code": "267",
+                                        "@name": "臨時収入・賞与",
+                                        "@level": "6",
+                                        "@unit": "円",
+                                        "@parentCode": "022"
                                     }
                                 ]
                             },
@@ -733,8 +839,8 @@ class TestMetaInfoReader:
                                 "@name": "時間軸",
                                 "CLASS": [
                                     {
-                                        "@code": "2015000000",
-                                        "@name": "2015年",
+                                        "@code": "2020000000",
+                                        "@name": "2020年",
                                         "@level": "1"
                                     }
                                 ]
@@ -753,8 +859,8 @@ class TestMetaInfoReader:
         assert reader.prefix_colname_with_classname is True
         assert reader.has_lv_hierarchy is False
 
-    def test_init_with_optional_params(self, mock_api_key, mock_stats_data_id):
-        """オプションパラメータでの初期化テスト"""
+    def test_init_with_hierarchy_enabled(self, mock_api_key, mock_stats_data_id):
+        """階層機能有効での初期化テスト"""
         reader = MetaInfoReader(
             api_key=mock_api_key,
             statsDataId=mock_stats_data_id,
@@ -789,8 +895,8 @@ class TestMetaInfoReader:
         assert params["explanationGetFlg"] == "Y"
 
     @patch('jpy_datareader.estat._BaseReader._get_response')
-    def test_read_success(self, mock_get_response, mock_api_key, mock_stats_data_id, expected_metainfo_response):
-        """正常系: データ取得成功のテスト"""
+    def test_read_returns_largest_non_time_dataframe(self, mock_get_response, mock_api_key, mock_stats_data_id, expected_metainfo_response):
+        """read()メソッドが最大行数のDataFrame（timeを除く）を返すことのテスト"""
         mock_response = Mock()
         mock_response.json.return_value = expected_metainfo_response
         mock_get_response.return_value = mock_response
@@ -804,18 +910,22 @@ class TestMetaInfoReader:
         # 結果がDataFrameであることを確認
         assert isinstance(result, pd.DataFrame)
         
-        # 最も多い行数のDataFrameが返されることを確認（timeを除く）
-        # この場合、男女が3行で最大
-        assert len(result) == 3
-        assert "男女code" in result.columns or "code" in result.columns
+        # 用途分類（cat01）が最も多い行数を持つため、それが返されることを確認
+        # expected_metainfo_responseでは用途分類に19個のCLASSが含まれている
+        assert len(result) == 19
+        
+        # 日本語列名が適用されていることを確認
+        expected_columns = ["用途分類コード", "用途分類", "用途分類階層レベル", "用途分類単位", "用途分類親コード"]
+        for col in expected_columns:
+            assert col in result.columns
 
         # インスタンス変数に結果が保存されていることを確認
         assert reader.STATUS == 0
-        assert reader.STAT_NAME == "国勢調査"
+        assert reader.STAT_NAME == "家計調査"
 
     @patch('jpy_datareader.estat._BaseReader._get_response')
-    def test_read_class_objs_success(self, mock_get_response, mock_api_key, mock_stats_data_id, expected_metainfo_response):
-        """正常系: クラスオブジェクト取得成功のテスト"""
+    def test_read_class_objs_structure(self, mock_get_response, mock_api_key, mock_stats_data_id, expected_metainfo_response):
+        """read_class_objs()の結果構造テスト"""
         mock_response = Mock()
         mock_response.json.return_value = expected_metainfo_response
         mock_get_response.return_value = mock_response
@@ -834,15 +944,31 @@ class TestMetaInfoReader:
             assert "meta_dataframe" in class_data
             assert isinstance(class_data["meta_dataframe"], pd.DataFrame)
 
-        # 特定のクラスIDを確認
-        ids = [class_data["id"] for class_data in result]
-        assert "tab" in ids
-        assert "cat01" in ids
-        assert "time" in ids
+        # 特定のクラスIDと名前を確認
+        ids_and_names = [(class_data["id"], class_data["name"]) for class_data in result]
+        assert ("tab", "表章項目") in ids_and_names
+        assert ("cat01", "用途分類") in ids_and_names
+        assert ("time", "時間軸") in ids_and_names
+
+        # 表章項目の詳細確認
+        tab_data = next(item for item in result if item["id"] == "tab")
+        tab_df = tab_data["meta_dataframe"]
+        assert len(tab_df) == 1
+        assert "表章項目コード" in tab_df.columns
+        assert tab_df.iloc[0]["表章項目コード"] == "01"
+        assert tab_df.iloc[0]["表章項目"] == "金額"
+
+        # 用途分類の詳細確認
+        cat01_data = next(item for item in result if item["id"] == "cat01")
+        cat01_df = cat01_data["meta_dataframe"]
+        assert len(cat01_df) == 19
+        assert "用途分類コード" in cat01_df.columns
+        assert "用途分類親コード" in cat01_df.columns
+
 
     @patch('jpy_datareader.estat._BaseReader._get_response')
-    def test_read_json_success(self, mock_get_response, mock_api_key, mock_stats_data_id, expected_metainfo_response):
-        """正常系: JSON取得成功のテスト"""
+    def test_read_json_returns_raw_response(self, mock_get_response, mock_api_key, mock_stats_data_id, expected_metainfo_response):
+        """read_json()が生のJSONレスポンスを返すことのテスト"""
         mock_response = Mock()
         mock_response.json.return_value = expected_metainfo_response
         mock_get_response.return_value = mock_response
@@ -857,8 +983,50 @@ class TestMetaInfoReader:
         assert result == expected_metainfo_response
 
     @patch('jpy_datareader.estat._BaseReader._get_response')
-    def test_read_api_error_status(self, mock_get_response, mock_api_key, mock_stats_data_id):
-        """異常系: API側でエラーステータスが返されるテスト"""
+    def test_level_column_handling_with_empty_strings(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """@levelに空文字列が含まれる場合の処理テスト"""
+        response_with_empty_level = {
+            "GET_META_INFO": {
+                "RESULT": {"STATUS": 0, "ERROR_MSG": "", "DATE": "2025-01-15T10:30:00.000+09:00"},
+                "PARAMETER": {"LANG": "J", "DATA_FORMAT": "json"},
+                "METADATA_INF": {
+                    "TABLE_INF": {"STAT_NAME": "テスト統計"},
+                    "CLASS_INF": {
+                        "CLASS_OBJ": [{
+                            "@id": "test_tab",
+                            "@name": "表章項目",
+                            "CLASS": [
+                                {"@code": "01", "@name": "金額", "@level": "", "@unit": "円"},  # 空文字列
+                                {"@code": "02", "@name": "人数", "@level": "1", "@unit": "人"}
+                            ]
+                        }]
+                    }
+                }
+            }
+        }
+        
+        mock_response = Mock()
+        mock_response.json.return_value = response_with_empty_level
+        mock_get_response.return_value = mock_response
+
+        reader = MetaInfoReader(api_key=mock_api_key, statsDataId=mock_stats_data_id)
+        result = reader.read_class_objs()
+
+        # 表章項目のDataFrameを取得
+        tab_data = next(item for item in result if item["id"] == "test_tab")
+        tab_df = tab_data["meta_dataframe"]
+        
+        # 階層レベル列が適切に処理されていることを確認
+        assert "表章項目階層レベル" in tab_df.columns
+        
+        # 空文字列がNAに変換されていることを確認
+        level_column = tab_df["表章項目階層レベル"]
+        assert pd.isna(level_column.iloc[0])  # 空文字列 -> NA
+        assert level_column.iloc[1] == 1      # "1" -> 1
+
+    @patch('jpy_datareader.estat._BaseReader._get_response')
+    def test_error_status_handling(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """API側エラーステータスの処理テスト"""
         error_response = {
             "GET_META_INFO": {
                 "RESULT": {
@@ -876,26 +1044,20 @@ class TestMetaInfoReader:
         reader = MetaInfoReader(api_key=mock_api_key, statsDataId=mock_stats_data_id)
         result = reader.read_class_objs()
 
-        # エラーステータスでも結果は返される（空のリスト）
+        # エラーステータスでも空のリストが返される
         assert isinstance(result, list)
         assert len(result) == 0
         assert reader.STATUS == 1
         assert reader.ERROR_MSG == "統計表IDが存在しません。"
 
     @patch('jpy_datareader.estat._BaseReader._get_response')
-    def test_read_missing_class_inf(self, mock_get_response, mock_api_key, mock_stats_data_id):
-        """異常系: CLASS_INFが存在しない場合のテスト"""
+    def test_missing_class_inf_handling(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """CLASS_INFが存在しない場合の処理テスト"""
         incomplete_response = {
             "GET_META_INFO": {
-                "RESULT": {
-                    "STATUS": 0,
-                    "ERROR_MSG": "",
-                    "DATE": "2025-01-15T10:30:00.000+09:00"
-                },
+                "RESULT": {"STATUS": 0, "ERROR_MSG": "", "DATE": "2025-01-15T10:30:00.000+09:00"},
                 "METADATA_INF": {
-                    "TABLE_INF": {
-                        "STAT_NAME": "国勢調査"
-                    }
+                    "TABLE_INF": {"STAT_NAME": "テスト統計"}
                     # CLASS_INFが存在しない
                 }
             }
@@ -913,8 +1075,8 @@ class TestMetaInfoReader:
         assert len(result) == 0
 
     @patch('jpy_datareader.estat._BaseReader._get_response')
-    def test_read_communication_error(self, mock_get_response, mock_api_key, mock_stats_data_id):
-        """異常系: 通信例外のテスト"""
+    def test_communication_error_handling(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """通信例外の処理テスト"""
         mock_get_response.side_effect = RemoteDataError("Unable to read URL")
 
         reader = MetaInfoReader(api_key=mock_api_key, statsDataId=mock_stats_data_id)
@@ -922,8 +1084,8 @@ class TestMetaInfoReader:
         with pytest.raises(RemoteDataError, match="Unable to read URL"):
             reader.read()
 
-    def test_create_class_dataframe_with_list(self, mock_api_key, mock_stats_data_id):
-        """_create_class_dataframeメソッドのリスト入力テスト"""
+    def test_create_class_dataframe_with_list_input(self, mock_api_key, mock_stats_data_id):
+        """_create_class_dataframe()のリスト入力処理テスト"""
         reader = MetaInfoReader(api_key=mock_api_key, statsDataId=mock_stats_data_id)
         
         class_data = [
@@ -938,9 +1100,12 @@ class TestMetaInfoReader:
         assert "@code" in result.columns
         assert "@name" in result.columns
         assert "@level" in result.columns
+        
+        # レベルがInt64型に変換されていることを確認
+        assert result["@level"].dtype == "Int64"
 
-    def test_create_class_dataframe_with_dict(self, mock_api_key, mock_stats_data_id):
-        """_create_class_dataframeメソッドの辞書入力テスト"""
+    def test_create_class_dataframe_with_dict_input(self, mock_api_key, mock_stats_data_id):
+        """_create_class_dataframe()の辞書入力処理テスト"""
         reader = MetaInfoReader(api_key=mock_api_key, statsDataId=mock_stats_data_id)
         
         class_data = {"@code": "001", "@name": "テスト", "@level": "1"}
@@ -951,57 +1116,8 @@ class TestMetaInfoReader:
         assert len(result) == 1
         assert result.iloc[0]["@code"] == "001"
 
-    def test_data_consistency_with_local_file(self, mock_api_key, mock_stats_data_id, tmp_path):
-        """整合性テスト: ローカルファイルとの比較"""
-        # テストデータを一時ファイルに保存
-        test_data = {
-            "GET_META_INFO": {
-                "RESULT": {"STATUS": 0, "ERROR_MSG": "", "DATE": "2025-01-15T10:30:00.000+09:00"},
-                "PARAMETER": {"LANG": "J", "DATA_FORMAT": "json"},
-                "METADATA_INF": {
-                    "TABLE_INF": {"STAT_NAME": "テスト統計", "GOV_ORG": "テスト省"},
-                    "CLASS_INF": {
-                        "CLASS_OBJ": [{
-                            "@id": "test_tab",
-                            "@name": "テスト項目",
-                            "CLASS": [
-                                {"@code": "001", "@name": "項目1", "@level": "1"},
-                                {"@code": "002", "@name": "項目2", "@level": "1"}
-                            ]
-                        }]
-                    }
-                }
-            }
-        }
-        
-        # テストデータファイルを作成
-        test_file = tmp_path / "expected_metainfo.json"
-        with open(test_file, 'w', encoding='utf-8') as f:
-            json.dump(test_data, f, ensure_ascii=False, indent=2)
-
-        # ファイルからデータを読み込み
-        with open(test_file, 'r', encoding='utf-8') as f:
-            expected_data = json.load(f)
-
-        with patch('jpy_datareader.estat._BaseReader._get_response') as mock_get_response:
-            mock_response = Mock()
-            mock_response.json.return_value = test_data
-            mock_get_response.return_value = mock_response
-
-            reader = MetaInfoReader(api_key=mock_api_key, statsDataId=mock_stats_data_id)
-            result_json = reader.read_json()
-
-            # レスポンスデータとファイルデータが一致することを確認
-            assert result_json == expected_data
-            
-            # 重要なキーが存在することを確認
-            class_obj = result_json["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"][0]
-            assert class_obj["@id"] == "test_tab"
-            assert class_obj["@name"] == "テスト項目"
-            assert len(class_obj["CLASS"]) == 2
-
-    def test_prefix_colname_functionality(self, mock_api_key, mock_stats_data_id):
-        """列名プレフィックス機能のテスト"""
+    def test_column_name_transformation_with_prefix(self, mock_api_key, mock_stats_data_id):
+        """列名変換のプレフィックス機能テスト"""
         # プレフィックスありの場合
         reader_with_prefix = MetaInfoReader(
             api_key=mock_api_key,
@@ -1009,10 +1125,14 @@ class TestMetaInfoReader:
             prefix_colname_with_classname=True
         )
         
-        class_data = [{"@code": "001", "@name": "テスト"}]
-        result_with_prefix = reader_with_prefix._apply_colname_transformations(
-            pd.DataFrame(class_data), "テスト項目"
-        )
+        class_data = [{"@code": "001", "@name": "テスト", "@level": "1", "@unit": "円"}]
+        raw_df = pd.DataFrame(class_data)
+        result_with_prefix = reader_with_prefix._apply_colname_transformations(raw_df, "用途分類")
+        
+        # プレフィックスありの場合は日本語列名にクラス名が含まれる
+        expected_columns = ["用途分類コード", "用途分類", "用途分類階層レベル", "用途分類単位"]
+        for col in expected_columns:
+            assert col in result_with_prefix.columns
         
         # プレフィックスなしの場合
         reader_without_prefix = MetaInfoReader(
@@ -1021,16 +1141,40 @@ class TestMetaInfoReader:
             prefix_colname_with_classname=False
         )
         
-        result_without_prefix = reader_without_prefix._apply_colname_transformations(
-            pd.DataFrame(class_data), "テスト項目"
-        )
+        result_without_prefix = reader_without_prefix._apply_colname_transformations(raw_df, "用途分類")
         
-        # プレフィックスありの場合は列名にクラス名が含まれる
-        assert any("テスト項目" in col for col in result_with_prefix.columns)
+        # プレフィックスなしの場合の列名確認
+        expected_columns_no_prefix = ["コード", "用途分類", "階層レベル", "単位"]  # クラス名列のみ例外
+        for col in expected_columns_no_prefix:
+            assert col in result_without_prefix.columns
+
+    def test_time_class_exclusion_in_read(self, mock_api_key, mock_stats_data_id, expected_metainfo_response):
+        """read()メソッドがtimeクラスを除外することのテスト"""
+        # timeクラスが最大行数を持つケースをテスト
+        modified_response = expected_metainfo_response.copy()
         
-        # プレフィックスなしの場合は列名にクラス名が含まれない（ただし日本語変換は適用される）
-        prefix_cols = [col for col in result_without_prefix.columns if "テスト項目" in col]
-        assert len(prefix_cols) <= 1  # 日本語変換で1つだけクラス名列が追加される可能性
+        # timeクラスに多くのデータを追加
+        time_class = {
+            "@id": "time",
+            "@name": "時間軸",
+            "CLASS": [
+                {"@code": f"202{i}000000", "@name": f"202{i}年", "@level": "1"}
+                for i in range(0, 25)  # 25個のデータ（用途分類の19個より多い）
+            ]
+        }
+        modified_response["GET_META_INFO"]["METADATA_INF"]["CLASS_INF"]["CLASS_OBJ"][2] = time_class
+        
+        with patch('jpy_datareader.estat._BaseReader._get_response') as mock_get_response:
+            mock_response = Mock()
+            mock_response.json.return_value = modified_response
+            mock_get_response.return_value = mock_response
+
+            reader = MetaInfoReader(api_key=mock_api_key, statsDataId=mock_stats_data_id)
+            result = reader.read()
+
+            # timeクラスが除外され、用途分類（19行）が返されることを確認
+            assert len(result) == 19
+            assert "用途分類コード" in result.columns
 
 
 class TestErrorHandling:
