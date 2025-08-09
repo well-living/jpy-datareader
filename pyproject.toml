@@ -4,4 +4,4 @@ version = "0.1.0"
 description = "ARemote data access to government data for pandas."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["numpy", "pandas", "requests"]
+dependencies = ["numpy", "pandas", "requests", "python-dotenv"]
