@@ -1,7 +1,12 @@
 [project]
 name = "jpy-datareader"
 version = "0.1.0"
-description = "ARemote data access to government data for pandas."
+description = "A Remote data access to government data for pandas."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["numpy", "pandas", "requests", "python-dotenv"]
+
+[project.urls]
+"Homepage" = "https://github.com/well-living/jpy-datareader"
+"Bug Tracker" = "https://github.com/well-living/jpy-datareader/issues"
+"Source" = "https://github.com/well-living/jpy-datareader"
