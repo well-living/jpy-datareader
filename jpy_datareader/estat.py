@@ -117,13 +117,13 @@ class _eStatReader(_BaseReader):
     def _get_api_key_from_env(self, dotenv_path: Optional[str] = None) -> Optional[str]:
         """
         Get API key from environment variables or .env files.
-        First tries dotenv files, then falls back to environment variables.
-        
+        Prefer existing environment variables first, then try dotenv files.
+
         Parameters
         ----------
         dotenv_path : Optional[str]
             Path to specific .env file to load. If None, tries default files.
-            
+
         Returns
         -------
         Optional[str]
@@ -132,46 +132,44 @@ class _eStatReader(_BaseReader):
         # Environment variable names to try in order
         env_vars = [
             "E_STAT_APPLICATION_ID",
-            "ESTAT_APPLICATION_ID", 
+            "ESTAT_APPLICATION_ID",
             "E_STAT_APP_ID",
             "ESTAT_APP_ID",
             "E_STAT_APPID",
             "ESTAT_APPID",
             "E_STAT_API_KEY",
-            "ESTAT_API_KEY"
+            "ESTAT_API_KEY",
         ]
-        
-        # First try dotenv files if available
+
+        # 1) Prefer already-set environment variables
+        for var_name in env_vars:
+            api_key = os.getenv(var_name)
+            if api_key:
+                return api_key
+
+        # 2) Try dotenv files (won't override existing env vars)
         if DOTENV_AVAILABLE:
             if dotenv_path:
-                # If specific dotenv path is provided
-                if Path(dotenv_path).exists():
-                    load_dotenv(dotenv_path)
-                    # Try all environment variables after loading the specified file
+                p = Path(dotenv_path)
+                if p.exists():
+                    load_dotenv(p, override=False)
                     for var_name in env_vars:
                         api_key = os.getenv(var_name)
                         if api_key:
                             return api_key
             else:
-                # Try default .env files
-                env_files = [".estat_env", ".env_estat", ".env"]
-                
-                for env_file in env_files:
-                    if Path(env_file).exists():
-                        load_dotenv(env_file)
-                        # Try all environment variables after loading each file
+                # Try default .env files in this order
+                for env_file in [".estat_env", ".env_estat", ".env"]:
+                    p = Path(env_file)
+                    if p.exists():
+                        load_dotenv(p, override=False)
                         for var_name in env_vars:
                             api_key = os.getenv(var_name)
                             if api_key:
                                 return api_key
-        
-        # Fallback to regular environment variables
-        for var_name in env_vars:
-            api_key = os.getenv(var_name)
-            if api_key:
-                return api_key
-                
+
         return None
+
 
     def get_url(self, path: str = "getStatsData") -> str:
         """
@@ -809,7 +807,11 @@ class MetaInfoReader(_eStatReader):
         # Apply transformations
         return self._apply_colname_transformations(raw_df, class_name)
 
-    def create_hierarchy_dataframe(self, metainfo: Dict[str, Any], cat_key: int) -> Optional[pd.DataFrame]:
+    def create_hierarchy_dataframe(self, 
+            metainfo: Dict[str, Any], 
+            cat_key: int,
+            level_to: Optional[int]=None
+        ) -> Optional[pd.DataFrame]:
         """
         Create a hierarchical DataFrame based on metadata information.
         
@@ -824,6 +826,8 @@ class MetaInfoReader(_eStatReader):
             @level, and @parentCode fields
         cat_key : int
             Target category key index
+        level_to: Optional[int]
+            If specified, only columns up to this level will be included.
 
         Returns
         -------
@@ -959,6 +963,13 @@ class MetaInfoReader(_eStatReader):
                 
                 hierarchy_df[level_cols] = hierarchy_df[level_cols].ffill(axis=1)
                 hierarchy_df[hierarchy_cols] = hierarchy_df[hierarchy_cols].ffill(axis=1)
+
+            if isinstance(level_to, int) and 0 < level_to < max_level:
+                # 指定された最大階層レベルまでの列のみを残す
+                hierarchy_df = hierarchy_df[
+                    [f"level{lv}" for lv in range(1, level_to + 1)] +
+                    [f"{meta_name}階層{lv}" for lv in range(1, level_to + 1)]
+                ].drop_duplicates()
 
             return hierarchy_df
             
@@ -1876,12 +1887,10 @@ class DataCatalogReader(_eStatReader):
             record_path=["GET_DATA_CATALOG", "DATA_CATALOG_LIST_INF", "DATA_CATALOG_INF"],
             sep="_",
         )
-        
-        # Clean column names
-        data_catalog_inf = data_catalog_inf.assign(**{
-            col.replace("@", "").rstrip("_$"): data_catalog_inf[col]
-            for col in data_catalog_inf.columns
-        }).drop(columns=data_catalog_inf.columns.tolist())
+
+        # Clean column names safely (preserve columns that don't need changes)
+        rename_map = {col: col.replace("@", "").rstrip("_$") for col in data_catalog_inf.columns}
+        data_catalog_inf = data_catalog_inf.rename(columns=rename_map)
 
         return data_catalog_inf
 
