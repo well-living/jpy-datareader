@@ -22,7 +22,7 @@ from jpy_datareader.base import _BaseReader
 
 _version = "3.0"
 _BASE_URL = f"https://api.e-stat.go.jp/rest/{_version}/app/json"
-LIMIT = 100000
+LIMIT = 100_000
 
 TRANSLATION_MAPPING = {
     "value": "値", 
@@ -1450,7 +1450,7 @@ class StatsDataReader(_eStatReader):
                     
                     # Break if position exceeds maximum
                     if int(start_position) > self.max:
-                        print(f"Warning: NEXT_KEY position {start_position} exceeds limit {self.max}. Stopping pagination.")
+                        print(f"NEXT_KEY position {start_position} exceeds limit {self.max}. Stopping pagination.")
                         break
                     
                     # Update params with new start position
