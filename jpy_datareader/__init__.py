@@ -4,7 +4,6 @@ from .data import (
     get_data_estat_statslist,
     get_data_estat_metainfo,
     get_data_estat_statsdata,
-    get_data_estat_datacatalog,
 )
 
 PKG = os.path.dirname(__file__)
@@ -14,5 +13,4 @@ __all__ = [
     "get_data_estat_statslist",
     "get_data_estat_metainfo",
     "get_data_estat_statsdata",
-    "get_data_estat_datacatalog",
 ]
