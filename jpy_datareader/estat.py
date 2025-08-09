@@ -22,7 +22,7 @@ from jpy_datareader.base import _BaseReader
 
 _version = "3.0"
 _BASE_URL = f"https://api.e-stat.go.jp/rest/{_version}/app/json"
-LIMIT = 100000
+LIMIT = 100_000
 
 TRANSLATION_MAPPING = {
     "value": "値", 
@@ -509,6 +509,7 @@ class MetaInfoReader(_eStatReader):
         statsDataId: Union[str, int],
         prefix_colname_with_classname: bool = True,
         has_lv_hierarchy: bool = False,
+        level_to: Optional[int] = None,
         use_fillna_lv_hierarchy: bool = True,
         lang: Optional[str] = None,
         explanationGetFlg: Optional[str] = None,
@@ -532,6 +533,7 @@ class MetaInfoReader(_eStatReader):
         self.statsDataId = statsDataId
         self.prefix_colname_with_classname = prefix_colname_with_classname
         self.has_lv_hierarchy = has_lv_hierarchy
+        self.level_to = level_to
         self.use_fillna_lv_hierarchy = use_fillna_lv_hierarchy
 
     @property
@@ -641,7 +643,7 @@ class MetaInfoReader(_eStatReader):
                 "@level" in class_df_raw.columns and 
                 len(class_df_raw["@level"].unique()) > 1):
                 # Use the method to create hierarchy
-                hierarchy_df = self.create_hierarchy_dataframe(json_data, i)
+                hierarchy_df = self.create_hierarchy_dataframe(json_data, i, level_to=self.level_to)
 
             # 列名変換を実行
             class_df = self._apply_colname_transformations(class_df_raw, class_name)
@@ -1102,18 +1104,82 @@ class StatsDataReader(_eStatReader):
         cdArea: Optional[Union[str, int]] = None,
         cdAreaFrom: Optional[Union[str, int]] = None,
         cdAreaTo: Optional[Union[str, int]] = None,
+        # Category 01
         lvCat01: Optional[Union[str, int]] = None,
         cdCat01: Optional[Union[str, int]] = None,
         cdCat01From: Optional[Union[str, int]] = None,
         cdCat01To: Optional[Union[str, int]] = None,
+        # Category 02
         lvCat02: Optional[Union[str, int]] = None,
         cdCat02: Optional[Union[str, int]] = None,
         cdCat02From: Optional[Union[str, int]] = None,
         cdCat02To: Optional[Union[str, int]] = None,
+        # Category 03
         lvCat03: Optional[Union[str, int]] = None,
         cdCat03: Optional[Union[str, int]] = None,
         cdCat03From: Optional[Union[str, int]] = None,
         cdCat03To: Optional[Union[str, int]] = None,
+        # Category 04
+        lvCat04: Optional[Union[str, int]] = None,
+        cdCat04: Optional[Union[str, int]] = None,
+        cdCat04From: Optional[Union[str, int]] = None,
+        cdCat04To: Optional[Union[str, int]] = None,
+        # Category 05
+        lvCat05: Optional[Union[str, int]] = None,
+        cdCat05: Optional[Union[str, int]] = None,
+        cdCat05From: Optional[Union[str, int]] = None,
+        cdCat05To: Optional[Union[str, int]] = None,
+        # Category 06
+        lvCat06: Optional[Union[str, int]] = None,
+        cdCat06: Optional[Union[str, int]] = None,
+        cdCat06From: Optional[Union[str, int]] = None,
+        cdCat06To: Optional[Union[str, int]] = None,
+        # Category 07
+        lvCat07: Optional[Union[str, int]] = None,
+        cdCat07: Optional[Union[str, int]] = None,
+        cdCat07From: Optional[Union[str, int]] = None,
+        cdCat07To: Optional[Union[str, int]] = None,
+        # Category 08
+        lvCat08: Optional[Union[str, int]] = None,
+        cdCat08: Optional[Union[str, int]] = None,
+        cdCat08From: Optional[Union[str, int]] = None,
+        cdCat08To: Optional[Union[str, int]] = None,
+        # Category 09
+        lvCat09: Optional[Union[str, int]] = None,
+        cdCat09: Optional[Union[str, int]] = None,
+        cdCat09From: Optional[Union[str, int]] = None,
+        cdCat09To: Optional[Union[str, int]] = None,
+        # Category 10
+        lvCat10: Optional[Union[str, int]] = None,
+        cdCat10: Optional[Union[str, int]] = None,
+        cdCat10From: Optional[Union[str, int]] = None,
+        cdCat10To: Optional[Union[str, int]] = None,
+        # Category 11
+        lvCat11: Optional[Union[str, int]] = None,
+        cdCat11: Optional[Union[str, int]] = None,
+        cdCat11From: Optional[Union[str, int]] = None,
+        cdCat11To: Optional[Union[str, int]] = None,
+        # Category 12
+        lvCat12: Optional[Union[str, int]] = None,
+        cdCat12: Optional[Union[str, int]] = None,
+        cdCat12From: Optional[Union[str, int]] = None,
+        cdCat12To: Optional[Union[str, int]] = None,
+        # Category 13
+        lvCat13: Optional[Union[str, int]] = None,
+        cdCat13: Optional[Union[str, int]] = None,
+        cdCat13From: Optional[Union[str, int]] = None,
+        cdCat13To: Optional[Union[str, int]] = None,
+        # Category 14
+        lvCat14: Optional[Union[str, int]] = None,
+        cdCat14: Optional[Union[str, int]] = None,
+        cdCat14From: Optional[Union[str, int]] = None,
+        cdCat14To: Optional[Union[str, int]] = None,
+        # Category 15
+        lvCat15: Optional[Union[str, int]] = None,
+        cdCat15: Optional[Union[str, int]] = None,
+        cdCat15From: Optional[Union[str, int]] = None,
+        cdCat15To: Optional[Union[str, int]] = None,
+        # Other parameters
         startPosition: Optional[Union[str, int]] = None,
         limit: int = LIMIT,
         metaGetFlg: Optional[str] = None,
@@ -1149,6 +1215,18 @@ class StatsDataReader(_eStatReader):
             "lvCat01": lvCat01, "cdCat01": cdCat01, "cdCat01From": cdCat01From, "cdCat01To": cdCat01To,
             "lvCat02": lvCat02, "cdCat02": cdCat02, "cdCat02From": cdCat02From, "cdCat02To": cdCat02To,
             "lvCat03": lvCat03, "cdCat03": cdCat03, "cdCat03From": cdCat03From, "cdCat03To": cdCat03To,
+            "lvCat04": lvCat04, "cdCat04": cdCat04, "cdCat04From": cdCat04From, "cdCat04To": cdCat04To,
+            "lvCat05": lvCat05, "cdCat05": cdCat05, "cdCat05From": cdCat05From, "cdCat05To": cdCat05To,
+            "lvCat06": lvCat06, "cdCat06": cdCat06, "cdCat06From": cdCat06From, "cdCat06To": cdCat06To,
+            "lvCat07": lvCat07, "cdCat07": cdCat07, "cdCat07From": cdCat07From, "cdCat07To": cdCat07To,
+            "lvCat08": lvCat08, "cdCat08": cdCat08, "cdCat08From": cdCat08From, "cdCat08To": cdCat08To,
+            "lvCat09": lvCat09, "cdCat09": cdCat09, "cdCat09From": cdCat09From, "cdCat09To": cdCat09To,
+            "lvCat10": lvCat10, "cdCat10": cdCat10, "cdCat10From": cdCat10From, "cdCat10To": cdCat10To,
+            "lvCat11": lvCat11, "cdCat11": cdCat11, "cdCat11From": cdCat11From, "cdCat11To": cdCat11To,
+            "lvCat12": lvCat12, "cdCat12": cdCat12, "cdCat12From": cdCat12From, "cdCat12To": cdCat12To,
+            "lvCat13": lvCat13, "cdCat13": cdCat13, "cdCat13From": cdCat13From, "cdCat13To": cdCat13To,
+            "lvCat14": lvCat14, "cdCat14": cdCat14, "cdCat14From": cdCat14From, "cdCat14To": cdCat14To,
+            "lvCat15": lvCat15, "cdCat15": cdCat15, "cdCat15From": cdCat15From, "cdCat15To": cdCat15To,
         }
         
         self.startPosition = startPosition
@@ -1372,7 +1450,7 @@ class StatsDataReader(_eStatReader):
                     
                     # Break if position exceeds maximum
                     if int(start_position) > self.max:
-                        print(f"Warning: NEXT_KEY position {start_position} exceeds limit {self.max}. Stopping pagination.")
+                        print(f"NEXT_KEY position {start_position} exceeds limit {self.max}. Stopping pagination.")
                         break
                     
                     # Update params with new start position
