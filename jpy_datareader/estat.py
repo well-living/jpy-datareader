@@ -1114,6 +1114,10 @@ class StatsDataReader(_eStatReader):
         cdCat03: Optional[Union[str, int]] = None,
         cdCat03From: Optional[Union[str, int]] = None,
         cdCat03To: Optional[Union[str, int]] = None,
+        lvCat04: Optional[Union[str, int]] = None,
+        cdCat04: Optional[Union[str, int]] = None,
+        cdCat04From: Optional[Union[str, int]] = None,
+        cdCat04To: Optional[Union[str, int]] = None,
         startPosition: Optional[Union[str, int]] = None,
         limit: int = LIMIT,
         metaGetFlg: Optional[str] = None,
@@ -1149,6 +1153,7 @@ class StatsDataReader(_eStatReader):
             "lvCat01": lvCat01, "cdCat01": cdCat01, "cdCat01From": cdCat01From, "cdCat01To": cdCat01To,
             "lvCat02": lvCat02, "cdCat02": cdCat02, "cdCat02From": cdCat02From, "cdCat02To": cdCat02To,
             "lvCat03": lvCat03, "cdCat03": cdCat03, "cdCat03From": cdCat03From, "cdCat03To": cdCat03To,
+            "lvCat04": lvCat04, "cdCat04": cdCat04, "cdCat04From": cdCat04From, "cdCat04To": cdCat04To,
         }
         
         self.startPosition = startPosition
