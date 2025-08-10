@@ -1292,5 +1292,535 @@ class TestStatsDataReader:
         regular_sorted_values = sorted(regular_result['値'].tolist())
         assert combined_sorted_values == regular_sorted_values
 
-
-
+    
+    # === Category 04-15 パラメータテスト ===
+    
+    @pytest.fixture
+    def mock_api_key(self):
+        """Fixture providing a mock API key."""
+        return "test_api_key_12345"
+    
+    @pytest.fixture
+    def mock_stats_data_id(self):
+        """Fixture providing a mock statistics data ID."""
+        return "0002070010"
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_category_04_parameters(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test Category 04 parameters are correctly passed to API."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            lvCat04="1",
+            cdCat04="001",
+            cdCat04From="001",
+            cdCat04To="005"
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        assert params['lvCat04'] == "1"
+        assert params['cdCat04'] == "001"
+        assert params['cdCat04From'] == "001"
+        assert params['cdCat04To'] == "005"
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_category_05_parameters(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test Category 05 parameters are correctly passed to API."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            lvCat05="2",
+            cdCat05="010",
+            cdCat05From="010",
+            cdCat05To="020"
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        assert params['lvCat05'] == "2"
+        assert params['cdCat05'] == "010"
+        assert params['cdCat05From'] == "010"
+        assert params['cdCat05To'] == "020"
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_category_06_through_10_parameters(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test Category 06-10 parameters are correctly passed to API."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            lvCat06="1", cdCat06="100", cdCat06From="100", cdCat06To="200",
+            lvCat07="2", cdCat07="200", cdCat07From="200", cdCat07To="300",
+            lvCat08="1", cdCat08="300", cdCat08From="300", cdCat08To="400",
+            lvCat09="3", cdCat09="400", cdCat09From="400", cdCat09To="500",
+            lvCat10="1", cdCat10="500", cdCat10From="500", cdCat10To="600"
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        # Category 06
+        assert params['lvCat06'] == "1"
+        assert params['cdCat06'] == "100"
+        assert params['cdCat06From'] == "100"
+        assert params['cdCat06To'] == "200"
+        
+        # Category 07
+        assert params['lvCat07'] == "2"
+        assert params['cdCat07'] == "200"
+        assert params['cdCat07From'] == "200"
+        assert params['cdCat07To'] == "300"
+        
+        # Category 08
+        assert params['lvCat08'] == "1"
+        assert params['cdCat08'] == "300"
+        assert params['cdCat08From'] == "300"
+        assert params['cdCat08To'] == "400"
+        
+        # Category 09
+        assert params['lvCat09'] == "3"
+        assert params['cdCat09'] == "400"
+        assert params['cdCat09From'] == "400"
+        assert params['cdCat09To'] == "500"
+        
+        # Category 10
+        assert params['lvCat10'] == "1"
+        assert params['cdCat10'] == "500"
+        assert params['cdCat10From'] == "500"
+        assert params['cdCat10To'] == "600"
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_category_11_through_15_parameters(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test Category 11-15 parameters are correctly passed to API."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            lvCat11="2", cdCat11="600", cdCat11From="600", cdCat11To="700",
+            lvCat12="1", cdCat12="700", cdCat12From="700", cdCat12To="800",
+            lvCat13="3", cdCat13="800", cdCat13From="800", cdCat13To="900",
+            lvCat14="1", cdCat14="900", cdCat14From="900", cdCat14To="999",
+            lvCat15="2", cdCat15="999", cdCat15From="999", cdCat15To="1000"
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        # Category 11
+        assert params['lvCat11'] == "2"
+        assert params['cdCat11'] == "600"
+        assert params['cdCat11From'] == "600"
+        assert params['cdCat11To'] == "700"
+        
+        # Category 12
+        assert params['lvCat12'] == "1"
+        assert params['cdCat12'] == "700"
+        assert params['cdCat12From'] == "700"
+        assert params['cdCat12To'] == "800"
+        
+        # Category 13
+        assert params['lvCat13'] == "3"
+        assert params['cdCat13'] == "800"
+        assert params['cdCat13From'] == "800"
+        assert params['cdCat13To'] == "900"
+        
+        # Category 14
+        assert params['lvCat14'] == "1"
+        assert params['cdCat14'] == "900"
+        assert params['cdCat14From'] == "900"
+        assert params['cdCat14To'] == "999"
+        
+        # Category 15
+        assert params['lvCat15'] == "2"
+        assert params['cdCat15'] == "999"
+        assert params['cdCat15From'] == "999"
+        assert params['cdCat15To'] == "1000"
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_mixed_category_parameters_comprehensive(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test comprehensive mix of category parameters from 01-15."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            # Mix of categories
+            cdCat01="001",
+            lvCat03="1",
+            cdCat05="050",
+            cdCat07From="100",
+            cdCat07To="200",
+            lvCat10="2",
+            cdCat12="750",
+            cdCat15From="990",
+            cdCat15To="999"
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        # Verify specified parameters are present
+        assert params['cdCat01'] == "001"
+        assert params['lvCat03'] == "1"
+        assert params['cdCat05'] == "050"
+        assert params['cdCat07From'] == "100"
+        assert params['cdCat07To'] == "200"
+        assert params['lvCat10'] == "2"
+        assert params['cdCat12'] == "750"
+        assert params['cdCat15From'] == "990"
+        assert params['cdCat15To'] == "999"
+        
+        # Verify unspecified parameters are not present
+        assert 'cdCat02' not in params
+        assert 'lvCat04' not in params
+        assert 'cdCat06' not in params
+        assert 'cdCat08' not in params
+        assert 'lvCat09' not in params
+        assert 'cdCat11' not in params
+        assert 'lvCat13' not in params
+        assert 'cdCat14' not in params
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_category_parameters_with_integer_values(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test category parameters accept integer values."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            # Integer values for various categories
+            lvCat04=1,
+            cdCat06=123,
+            cdCat08From=456,
+            cdCat10To=789,
+            lvCat12=3,
+            cdCat14=999,
+            cdCat15From=1000
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        # Verify integer parameters are correctly converted
+        assert params['lvCat04'] == 1
+        assert params['cdCat06'] == 123
+        assert params['cdCat08From'] == 456
+        assert params['cdCat10To'] == 789
+        assert params['lvCat12'] == 3
+        assert params['cdCat14'] == 999
+        assert params['cdCat15From'] == 1000
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_filter_params_storage_comprehensive(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test that all filter parameters are correctly stored in filter_params attribute."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            # Set various category parameters
+            lvCat04="1", cdCat04="100",
+            lvCat07="2", cdCat07From="200", cdCat07To="300",
+            lvCat11="1", cdCat11="500",
+            cdCat13From="700", cdCat13To="800",
+            lvCat15="3"
+        )
+        
+        # Verify filter_params contains all expected keys
+        expected_filter_keys = [
+            # Category 04
+            "lvCat04", "cdCat04", "cdCat04From", "cdCat04To",
+            # Category 05-15 (all combinations)
+            "lvCat05", "cdCat05", "cdCat05From", "cdCat05To",
+            "lvCat06", "cdCat06", "cdCat06From", "cdCat06To",
+            "lvCat07", "cdCat07", "cdCat07From", "cdCat07To",
+            "lvCat08", "cdCat08", "cdCat08From", "cdCat08To",
+            "lvCat09", "cdCat09", "cdCat09From", "cdCat09To",
+            "lvCat10", "cdCat10", "cdCat10From", "cdCat10To",
+            "lvCat11", "cdCat11", "cdCat11From", "cdCat11To",
+            "lvCat12", "cdCat12", "cdCat12From", "cdCat12To",
+            "lvCat13", "cdCat13", "cdCat13From", "cdCat13To",
+            "lvCat14", "cdCat14", "cdCat14From", "cdCat14To",
+            "lvCat15", "cdCat15", "cdCat15From", "cdCat15To"
+        ]
+        
+        for key in expected_filter_keys:
+            assert key in reader.filter_params
+        
+        # Verify specified values are correctly stored
+        assert reader.filter_params["lvCat04"] == "1"
+        assert reader.filter_params["cdCat04"] == "100"
+        assert reader.filter_params["lvCat07"] == "2"
+        assert reader.filter_params["cdCat07From"] == "200"
+        assert reader.filter_params["cdCat07To"] == "300"
+        assert reader.filter_params["lvCat11"] == "1"
+        assert reader.filter_params["cdCat11"] == "500"
+        assert reader.filter_params["cdCat13From"] == "700"
+        assert reader.filter_params["cdCat13To"] == "800"
+        assert reader.filter_params["lvCat15"] == "3"
+        
+        # Verify unspecified values are None
+        assert reader.filter_params["cdCat04From"] is None
+        assert reader.filter_params["cdCat04To"] is None
+        assert reader.filter_params["lvCat05"] is None
+        assert reader.filter_params["cdCat06"] is None
+        assert reader.filter_params["cdCat13"] is None
+        assert reader.filter_params["cdCat15"] is None
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_none_values_not_included_in_params(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test that None values for category parameters are not included in API params."""
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            # Explicitly set some to None, others left as default (None)
+            lvCat04=None,
+            cdCat05=None,
+            cdCat10="100",  # Only this should appear in params
+            lvCat15=None
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        # Only cdCat10 should be in params
+        assert params['cdCat10'] == "100"
+        
+        # None values should not be in params
+        assert 'lvCat04' not in params
+        assert 'cdCat05' not in params
+        assert 'lvCat15' not in params
+        assert 'cdCat04' not in params
+        assert 'cdCat04From' not in params
+        assert 'cdCat04To' not in params
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_all_categories_parameter_construction(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test parameter construction with all category types (01-15) specified."""
+        
+        # Create a comprehensive set of parameters
+        category_params = {}
+        for i in range(1, 16):
+            cat_num = f"{i:02d}" if i < 10 else str(i)
+            category_params[f"lvCat{cat_num}"] = str(i % 3 + 1)  # 1, 2, or 3
+            category_params[f"cdCat{cat_num}"] = f"{i:03d}"
+            category_params[f"cdCat{cat_num}From"] = f"{i:03d}"
+            category_params[f"cdCat{cat_num}To"] = f"{i+100:03d}"
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            **category_params
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        # Verify all category parameters are present
+        for i in range(1, 16):
+            cat_num = f"{i:02d}" if i < 10 else str(i)
+            assert params[f"lvCat{cat_num}"] == str(i % 3 + 1)
+            assert params[f"cdCat{cat_num}"] == f"{i:03d}"
+            assert params[f"cdCat{cat_num}From"] == f"{i:03d}"
+            assert params[f"cdCat{cat_num}To"] == f"{i+100:03d}"
+    
+    # === データ処理における拡張カテゴリテスト ===
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_extended_categories_in_response_processing(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test that extended categories are properly handled in response processing."""
+        
+        # Mock response with extended category data
+        extended_category_response = {
+            "GET_STATS_DATA": {
+                "RESULT": {"STATUS": 0},
+                "STATISTICAL_DATA": {
+                    "RESULT_INF": {"TOTAL_NUMBER": 2},
+                    "TABLE_INF": {"STATISTICS_NAME": "拡張カテゴリテスト"},
+                    "CLASS_INF": {
+                        "CLASS_OBJ": [
+                            {
+                                "@id": "cat04",
+                                "@name": "カテゴリ04",
+                                "CLASS": [{"@code": "001", "@name": "項目4-1", "@level": "1"}]
+                            },
+                            {
+                                "@id": "cat10",
+                                "@name": "カテゴリ10",
+                                "CLASS": [{"@code": "100", "@name": "項目10-1", "@level": "1"}]
+                            },
+                            {
+                                "@id": "cat15",
+                                "@name": "カテゴリ15",
+                                "CLASS": [{"@code": "999", "@name": "項目15-1", "@level": "1"}]
+                            }
+                        ]
+                    },
+                    "DATA_INF": {
+                        "VALUE": [
+                            {"@cat04": "001", "@cat10": "100", "@cat15": "999", "@unit": "件", "$": "1000"},
+                            {"@cat04": "001", "@cat10": "100", "@cat15": "999", "@unit": "件", "$": "2000"}
+                        ]
+                    }
+                }
+            }
+        }
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = extended_category_response
+        mock_get_response.return_value = mock_response
+        
+        result_df = reader.read()
+        
+        # Verify that extended categories are properly processed
+        assert isinstance(result_df, pd.DataFrame)
+        assert len(result_df) == 2
+        
+        # Check that extended category columns exist
+        expected_columns = ['カテゴリ04コード', 'カテゴリ10コード', 'カテゴリ15コード']
+        for col in expected_columns:
+            assert col in result_df.columns
+        
+        # Verify data values
+        assert all(result_df['カテゴリ04コード'] == '001')
+        assert all(result_df['カテゴリ10コード'] == '100')
+        assert all(result_df['カテゴリ15コード'] == '999')
+        assert result_df['値'].tolist() == [1000.0, 2000.0]
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_class_name_mapping_with_extended_categories(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test CLASS_NAME_MAPPING functionality with extended categories."""
+        
+        extended_mapping_response = {
+            "GET_STATS_DATA": {
+                "RESULT": {"STATUS": 0},
+                "STATISTICAL_DATA": {
+                    "RESULT_INF": {"TOTAL_NUMBER": 1},
+                    "TABLE_INF": {"STATISTICS_NAME": "マッピングテスト"},
+                    "CLASS_INF": {
+                        "CLASS_OBJ": [
+                            {"@id": "cat05", "@name": "分類05"},
+                            {"@id": "cat08", "@name": "分類08"},
+                            {"@id": "cat12", "@name": "分類12"},
+                            {"@id": "cat15", "@name": "分類15"}
+                        ]
+                    },
+                    "DATA_INF": {
+                        "VALUE": [{"@cat05": "001", "@cat08": "002", "@cat12": "003", "@cat15": "004", "@unit": "個", "$": "100"}]
+                    }
+                }
+            }
+        }
+        
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = extended_mapping_response
+        mock_get_response.return_value = mock_response
+        
+        reader.read()
+        
+        # Verify CLASS_NAME_MAPPING includes extended categories
+        assert hasattr(reader, 'CLASS_NAME_MAPPING')
+        expected_mapping = {
+            'cat05': '分類05',
+            'cat08': '分類08',
+            'cat12': '分類12',
+            'cat15': '分類15'
+        }
+        
+        for key, value in expected_mapping.items():
+            assert reader.CLASS_NAME_MAPPING[key] == value
+    
+    # === エラーハンドリングテスト ===
+    
+    @patch('jpy_datareader.base._BaseReader._get_response')
+    def test_invalid_category_parameter_types(self, mock_get_response, mock_api_key, mock_stats_data_id):
+        """Test handling of invalid category parameter types."""
+        
+        # Test with various invalid types that should be filtered out
+        reader = StatsDataReader(
+            api_key=mock_api_key,
+            statsDataId=mock_stats_data_id,
+            lvCat04=[1, 2, 3],  # List - invalid
+            cdCat06={"key": "value"},  # Dict - invalid
+            cdCat10From=None,  # None - should be filtered
+            cdCat15="valid_string"  # Valid string
+        )
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {"GET_STATS_DATA": {"RESULT": {"STATUS": 0}}}
+        mock_get_response.return_value = mock_response
+        
+        reader.read_json()
+        
+        call_args = mock_get_response.call_args
+        params = call_args[1]['params']
+        
+        # Only valid string parameter should be included
+        assert params['cdCat15'] == "valid_string"
+        
+        # Invalid types should not be included
+        assert 'lvCat04' not in params
+        assert 'cdCat06' not in params
+        assert 'cdCat10From' not in params
+    
