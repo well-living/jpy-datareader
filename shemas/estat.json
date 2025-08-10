@@ -1,0 +1,1365 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "e-Stat API",
+    "description": "政府統計の総合窓口（e-Stat）のAPI機能 - メタ情報取得とデータ取得（JSON形式のみ）",
+    "version": "v3.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.e-stat.go.jp/rest/3.0/app/json",
+      "description": "e-Stat API v3.0 JSON"
+    }
+  ],
+  "paths": {
+    "/getMetaInfo": {
+      "get": {
+        "summary": "メタ情報取得（JSON形式）",
+        "description": "指定した統計表IDに対応するメタ情報（表章事項、分類事項、地域事項等）をJSON形式で取得します。",
+        "operationId": "getMetaInfo",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "アプリケーションID（必須）",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "statsDataId",
+            "in": "query",
+            "description": "統計表ID（必須）",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{10}$"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "description": "言語（J:日本語、E:英語）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["J", "E"],
+              "default": "J"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "正常終了",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaInfoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/getStatsData": {
+      "get": {
+        "summary": "統計データ取得（JSON形式）",
+        "description": "指定した統計表ID又はデータセットIDに対応する統計データ（数値データ）をJSON形式で取得します。",
+        "operationId": "getStatsData",
+        "parameters": [
+          {
+            "name": "appId",
+            "in": "query",
+            "description": "アプリケーションID（必須）",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "statsDataId",
+            "in": "query",
+            "description": "統計表ID（dataSetIdと排他）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{10}$"
+            }
+          },
+          {
+            "name": "dataSetId",
+            "in": "query",
+            "description": "データセットID（statsDataIdと排他）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "description": "言語（J:日本語、E:英語）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["J", "E"],
+              "default": "J"
+            }
+          },
+          {
+            "name": "startPosition",
+            "in": "query",
+            "description": "データ取得開始位置（1から始まる行番号）",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "データ取得件数",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 100000
+            }
+          },
+          {
+            "name": "metaGetFlg",
+            "in": "query",
+            "description": "メタ情報取得フラグ（Y:取得する、N:取得しない）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["Y", "N"],
+              "default": "Y"
+            }
+          },
+          {
+            "name": "cntGetFlg",
+            "in": "query",
+            "description": "件数取得フラグ（Y:件数のみ取得、N:データも取得）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["Y", "N"],
+              "default": "N"
+            }
+          },
+          {
+            "name": "lvTab",
+            "in": "query",
+            "description": "表章事項の階層レベル（例: 1, 1-2, -2, 1-）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdTab",
+            "in": "query",
+            "description": "表章事項の単一コード（カンマ区切りで最大100個）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdTabFrom",
+            "in": "query",
+            "description": "表章事項のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdTabTo",
+            "in": "query",
+            "description": "表章事項のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvTime",
+            "in": "query",
+            "description": "時間軸事項の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdTime",
+            "in": "query",
+            "description": "時間軸事項の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdTimeFrom",
+            "in": "query",
+            "description": "時間軸事項のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdTimeTo",
+            "in": "query",
+            "description": "時間軸事項のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvArea",
+            "in": "query",
+            "description": "地域事項の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdArea",
+            "in": "query",
+            "description": "地域事項の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdAreaFrom",
+            "in": "query",
+            "description": "地域事項のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdAreaTo",
+            "in": "query",
+            "description": "地域事項のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat01",
+            "in": "query",
+            "description": "分類事項01の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat01",
+            "in": "query",
+            "description": "分類事項01の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat01From",
+            "in": "query",
+            "description": "分類事項01のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat01To",
+            "in": "query",
+            "description": "分類事項01のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat02",
+            "in": "query",
+            "description": "分類事項02の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat02",
+            "in": "query",
+            "description": "分類事項02の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat02From",
+            "in": "query",
+            "description": "分類事項02のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat02To",
+            "in": "query",
+            "description": "分類事項02のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat03",
+            "in": "query",
+            "description": "分類事項03の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat03",
+            "in": "query",
+            "description": "分類事項03の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat03From",
+            "in": "query",
+            "description": "分類事項03のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat03To",
+            "in": "query",
+            "description": "分類事項03のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat04",
+            "in": "query",
+            "description": "分類事項04の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat04",
+            "in": "query",
+            "description": "分類事項04の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat04From",
+            "in": "query",
+            "description": "分類事項04のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat04To",
+            "in": "query",
+            "description": "分類事項04のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat05",
+            "in": "query",
+            "description": "分類事項05の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat05",
+            "in": "query",
+            "description": "分類事項05の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat05From",
+            "in": "query",
+            "description": "分類事項05のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat05To",
+            "in": "query",
+            "description": "分類事項05のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat06",
+            "in": "query",
+            "description": "分類事項06の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat06",
+            "in": "query",
+            "description": "分類事項06の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat06From",
+            "in": "query",
+            "description": "分類事項06のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat06To",
+            "in": "query",
+            "description": "分類事項06のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat07",
+            "in": "query",
+            "description": "分類事項07の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat07",
+            "in": "query",
+            "description": "分類事項07の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat07From",
+            "in": "query",
+            "description": "分類事項07のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat07To",
+            "in": "query",
+            "description": "分類事項07のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat08",
+            "in": "query",
+            "description": "分類事項08の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat08",
+            "in": "query",
+            "description": "分類事項08の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat08From",
+            "in": "query",
+            "description": "分類事項08のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat08To",
+            "in": "query",
+            "description": "分類事項08のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat09",
+            "in": "query",
+            "description": "分類事項09の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat09",
+            "in": "query",
+            "description": "分類事項09の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat09From",
+            "in": "query",
+            "description": "分類事項09のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat09To",
+            "in": "query",
+            "description": "分類事項09のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat10",
+            "in": "query",
+            "description": "分類事項10の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat10",
+            "in": "query",
+            "description": "分類事項10の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat10From",
+            "in": "query",
+            "description": "分類事項10のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat10To",
+            "in": "query",
+            "description": "分類事項10のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat11",
+            "in": "query",
+            "description": "分類事項11の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat11",
+            "in": "query",
+            "description": "分類事項11の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat11From",
+            "in": "query",
+            "description": "分類事項11のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat11To",
+            "in": "query",
+            "description": "分類事項11のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat12",
+            "in": "query",
+            "description": "分類事項12の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat12",
+            "in": "query",
+            "description": "分類事項12の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat12From",
+            "in": "query",
+            "description": "分類事項12のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat12To",
+            "in": "query",
+            "description": "分類事項12のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat13",
+            "in": "query",
+            "description": "分類事項13の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat13",
+            "in": "query",
+            "description": "分類事項13の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat13From",
+            "in": "query",
+            "description": "分類事項13のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat13To",
+            "in": "query",
+            "description": "分類事項13のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat14",
+            "in": "query",
+            "description": "分類事項14の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat14",
+            "in": "query",
+            "description": "分類事項14の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat14From",
+            "in": "query",
+            "description": "分類事項14のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat14To",
+            "in": "query",
+            "description": "分類事項14のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lvCat15",
+            "in": "query",
+            "description": "分類事項15の階層レベル",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([1-9]|[1-9]-[1-9]|-[1-9]|[1-9]-)$"
+            }
+          },
+          {
+            "name": "cdCat15",
+            "in": "query",
+            "description": "分類事項15の単一コード",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat15From",
+            "in": "query",
+            "description": "分類事項15のコード範囲（開始）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cdCat15To",
+            "in": "query",
+            "description": "分類事項15のコード範囲（終了）",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "正常終了",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "description": "パラメータエラー",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "認証エラー",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "内部サーバーエラー",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "MetaInfoResponse": {
+        "type": "object",
+        "description": "メタ情報取得レスポンス（JSON形式）",
+        "properties": {
+          "GET_META_INFO": {
+            "type": "object",
+            "properties": {
+              "RESULT": {
+                "$ref": "#/components/schemas/Result"
+              },
+              "PARAMETER": {
+                "$ref": "#/components/schemas/MetaInfoParameter"
+              },
+              "METADATA_INF": {
+                "$ref": "#/components/schemas/MetadataInfo"
+              }
+            }
+          }
+        }
+      },
+      "StatsDataResponse": {
+        "type": "object",
+        "description": "統計データ取得レスポンス（JSON形式）",
+        "properties": {
+          "GET_STATS_DATA": {
+            "type": "object",
+            "properties": {
+              "RESULT": {
+                "$ref": "#/components/schemas/Result"
+              },
+              "PARAMETER": {
+                "$ref": "#/components/schemas/StatsDataParameter"
+              },
+              "STATISTICAL_DATA": {
+                "$ref": "#/components/schemas/StatisticalData"
+              }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "エラーレスポンス（JSON形式）",
+        "properties": {
+          "RESULT": {
+            "$ref": "#/components/schemas/Result"
+          }
+        }
+      },
+      "Result": {
+        "type": "object",
+        "description": "API処理結果情報",
+        "properties": {
+          "STATUS": {
+            "type": "integer",
+            "description": "処理結果コード（0-2:正常、100以上:エラー）"
+          },
+          "ERROR_MSG": {
+            "type": "string",
+            "description": "エラーメッセージ"
+          },
+          "DATE": {
+            "type": "string",
+            "format": "date-time",
+            "description": "出力日時"
+          }
+        }
+      },
+      "MetaInfoParameter": {
+        "type": "object",
+        "description": "メタ情報取得パラメータ（JSON形式）",
+        "properties": {
+          "LANG": {
+            "type": "string",
+            "description": "言語"
+          },
+          "STATS_DATA_ID": {
+            "type": "string",
+            "description": "統計表ID"
+          },
+          "DATA_FORMAT": {
+            "type": "string",
+            "description": "出力フォーマット"
+          }
+        }
+      },
+      "StatsDataParameter": {
+        "type": "object",
+        "description": "統計データ取得パラメータ（JSON形式）",
+        "properties": {
+          "LANG": {
+            "type": "string",
+            "description": "言語"
+          },
+          "STATS_DATA_ID": {
+            "type": "string",
+            "description": "統計表ID"
+          },
+          "DATASET_ID": {
+            "type": "string",
+            "description": "データセットID"
+          },
+          "DATA_FORMAT": {
+            "type": "string",
+            "description": "出力フォーマット"
+          },
+          "START_POSITION": {
+            "type": "integer",
+            "description": "データ取得開始位置"
+          },
+          "LIMIT": {
+            "type": "integer",
+            "description": "データ取得件数"
+          },
+          "METAGET_FLG": {
+            "type": "string",
+            "description": "メタ情報取得フラグ"
+          },
+          "CNT_GET_FLG": {
+            "type": "string",
+            "description": "件数取得フラグ"
+          }
+        }
+      },
+      "MetadataInfo": {
+        "type": "object",
+        "description": "メタ情報（JSON形式）",
+        "properties": {
+          "TABLE_INF": {
+            "$ref": "#/components/schemas/TableInfo"
+          },
+          "CLASS_INF": {
+            "$ref": "#/components/schemas/ClassInfo"
+          }
+        }
+      },
+      "StatisticalData": {
+        "type": "object",
+        "description": "統計データ（JSON形式）",
+        "properties": {
+          "RESULT_INF": {
+            "$ref": "#/components/schemas/ResultInfo"
+          },
+          "TABLE_INF": {
+            "$ref": "#/components/schemas/TableInfo"
+          },
+          "CLASS_INF": {
+            "$ref": "#/components/schemas/ClassInfo"
+          },
+          "DATA_INF": {
+            "$ref": "#/components/schemas/DataInfo"
+          }
+        }
+      },
+      "TableInfo": {
+        "type": "object",
+        "description": "統計表情報（JSON形式）",
+        "properties": {
+          "@id": {
+            "type": "string",
+            "description": "統計表ID"
+          },
+          "STAT_NAME": {
+            "type": "object",
+            "properties": {
+              "@code": {
+                "type": "string",
+                "description": "政府統計コード"
+              },
+              "$": {
+                "type": "string",
+                "description": "政府統計名"
+              }
+            }
+          },
+          "GOV_ORG": {
+            "type": "object",
+            "properties": {
+              "@code": {
+                "type": "string",
+                "description": "作成機関コード"
+              },
+              "$": {
+                "type": "string",
+                "description": "作成機関名"
+              }
+            }
+          },
+          "STATISTICS_NAME": {
+            "type": "string",
+            "description": "提供統計名及び提供分類名"
+          },
+          "TITLE": {
+            "type": "object",
+            "properties": {
+              "@no": {
+                "type": "string",
+                "description": "表番号"
+              },
+              "$": {
+                "type": "string",
+                "description": "表題"
+              }
+            }
+          },
+          "CYCLE": {
+            "type": "string",
+            "description": "提供周期"
+          },
+          "SURVEY_DATE": {
+            "type": "string",
+            "description": "調査年月"
+          },
+          "OPEN_DATE": {
+            "type": "string",
+            "format": "date",
+            "description": "公開日"
+          },
+          "SMALL_AREA": {
+            "type": "string",
+            "description": "小地域属性フラグ"
+          },
+          "MAIN_CATEGORY": {
+            "type": "object",
+            "properties": {
+              "@code": {
+                "type": "string",
+                "description": "統計大分野コード"
+              },
+              "$": {
+                "type": "string",
+                "description": "統計大分野名"
+              }
+            }
+          },
+          "SUB_CATEGORY": {
+            "type": "object",
+            "properties": {
+              "@code": {
+                "type": "string",
+                "description": "統計小分野コード"
+              },
+              "$": {
+                "type": "string",
+                "description": "統計小分野名"
+              }
+            }
+          },
+          "OVERALL_TOTAL_NUMBER": {
+            "type": "integer",
+            "description": "統計データの総件数"
+          },
+          "UPDATED_DATE": {
+            "type": "string",
+            "format": "date",
+            "description": "最終更新日"
+          }
+        }
+      },
+      "ClassInfo": {
+        "type": "object",
+        "description": "分類情報（JSON形式）",
+        "properties": {
+          "CLASS_OBJ": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClassObject"
+            }
+          }
+        }
+      },
+      "ClassObject": {
+        "type": "object",
+        "description": "分類オブジェクト（JSON形式）",
+        "properties": {
+          "@id": {
+            "type": "string",
+            "description": "分類ID"
+          },
+          "@name": {
+            "type": "string",
+            "description": "分類名"
+          },
+          "@description": {
+            "type": "string",
+            "description": "分類説明"
+          },
+          "CLASS": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClassItem"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ClassItem"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "ClassItem": {
+        "type": "object",
+        "description": "分類項目（JSON形式）",
+        "properties": {
+          "@code": {
+            "type": "string",
+            "description": "項目コード"
+          },
+          "@name": {
+            "type": "string",
+            "description": "項目名"
+          },
+          "@level": {
+            "type": "string",
+            "description": "階層レベル"
+          },
+          "@unit": {
+            "type": "string",
+            "description": "単位"
+          },
+          "@parentCode": {
+            "type": "string",
+            "description": "親コード"
+          },
+          "@addInf": {
+            "type": "string",
+            "description": "追加情報"
+          }
+        }
+      },
+      "ResultInfo": {
+        "type": "object",
+        "description": "取得結果情報（JSON形式）",
+        "properties": {
+          "TOTAL_NUMBER": {
+            "type": "integer",
+            "description": "総件数"
+          },
+          "FROM_NUMBER": {
+            "type": "integer",
+            "description": "開始位置"
+          },
+          "TO_NUMBER": {
+            "type": "integer",
+            "description": "終了位置"
+          },
+          "NEXT_KEY": {
+            "type": "integer",
+            "description": "次データ開始位置"
+          }
+        }
+      },
+      "DataInfo": {
+        "type": "object",
+        "description": "データ情報（JSON形式）",
+        "properties": {
+          "NOTE": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            }
+          },
+          "VALUE": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Value"
+            }
+          }
+        }
+      },
+      "Note": {
+        "type": "object",
+        "description": "特殊文字の凡例（JSON形式）",
+        "properties": {
+          "@char": {
+            "type": "string",
+            "description": "特殊文字"
+          },
+          "$": {
+            "type": "string",
+            "description": "説明"
+          }
+        }
+      },
+      "Value": {
+        "type": "object",
+        "description": "統計数値（JSON形式）",
+        "properties": {
+          "@tab": {
+            "type": "string",
+            "description": "表章事項コード"
+          },
+          "@cat01": {
+            "type": "string",
+            "description": "分類事項01コード"
+          },
+          "@cat02": {
+            "type": "string",
+            "description": "分類事項02コード"
+          },
+          "@cat03": {
+            "type": "string",
+            "description": "分類事項03コード"
+          },
+          "@cat04": {
+            "type": "string",
+            "description": "分類事項04コード"
+          },
+          "@cat05": {
+            "type": "string",
+            "description": "分類事項05コード"
+          },
+          "@cat06": {
+            "type": "string",
+            "description": "分類事項06コード"
+          },
+          "@cat07": {
+            "type": "string",
+            "description": "分類事項07コード"
+          },
+          "@cat08": {
+            "type": "string",
+            "description": "分類事項08コード"
+          },
+          "@cat09": {
+            "type": "string",
+            "description": "分類事項09コード"
+          },
+          "@cat10": {
+            "type": "string",
+            "description": "分類事項10コード"
+          },
+          "@cat11": {
+            "type": "string",
+            "description": "分類事項11コード"
+          },
+          "@cat12": {
+            "type": "string",
+            "description": "分類事項12コード"
+          },
+          "@cat13": {
+            "type": "string",
+            "description": "分類事項13コード"
+          },
+          "@cat14": {
+            "type": "string",
+            "description": "分類事項14コード"
+          },
+          "@cat15": {
+            "type": "string",
+            "description": "分類事項15コード"
+          },
+          "@area": {
+            "type": "string",
+            "description": "地域事項コード"
+          },
+          "@time": {
+            "type": "string",
+            "description": "時間軸事項コード"
+          },
+          "@unit": {
+            "type": "string",
+            "description": "単位"
+          },
+          "$": {
+            "type": "string",
+            "description": "統計数値"
+          }
+        }
+      }
+    }
+  }
+}
