@@ -47,6 +47,17 @@
               "enum": ["J", "E"],
               "default": "J"
             }
+          },
+          {
+            "name": "explanationGetFlg",
+            "in": "query",
+            "description": "解説情報有無（Y:取得する、N:取得しない）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["Y", "N"],
+              "default": "Y"
+            }
           }
         ],
         "responses": {
@@ -161,6 +172,39 @@
               "type": "string",
               "enum": ["Y", "N"],
               "default": "N"
+            }
+          },
+          {
+            "name": "explanationGetFlg",
+            "in": "query",
+            "description": "解説情報有無（Y:取得する、N:取得しない）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["Y", "N"],
+              "default": "Y"
+            }
+          },
+          {
+            "name": "annotationGetFlg",
+            "in": "query",
+            "description": "注釈情報有無（Y:取得する、N:取得しない）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["Y", "N"],
+              "default": "Y"
+            }
+          },
+          {
+            "name": "replaceSpChar",
+            "in": "query",
+            "description": "特殊文字の置換（0:置換しない、1:0に置換、2:NULLに置換、3:NAに置換）",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["0", "1", "2", "3"],
+              "default": "0"
             }
           },
           {
