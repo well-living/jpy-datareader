@@ -4,6 +4,7 @@
 import os
 import time
 import urllib
+import datetime
 import warnings
 from typing import Tuple, List, Dict, Any, Optional, Union
 from pathlib import Path
@@ -430,10 +431,14 @@ class StatsListReader(_eStatReader):
         )
         
         # Clean column names
-        table_inf = table_inf.assign(**{
-            col.replace("@", "").rstrip("_$"): table_inf[col] 
-            for col in table_inf.columns
-        }).drop(columns=table_inf.columns.tolist())
+        table_inf = (table_inf
+            .set_axis([col.replace("@", "").rstrip("_$") for col in table_inf.columns], axis="columns")
+            .rename(columns={"id": "statsDataId"})
+            .assign(**{
+                "UPDATED_DATE": self.UPDATED_DATE,
+                "DATE": self.DATE,
+            })
+        )
 
         return table_inf
     
@@ -443,13 +448,14 @@ class StatsListReader(_eStatReader):
         result = response_data.get("RESULT", {})
         self.STATUS = result.get("STATUS")
         self.ERROR_MSG = result.get("ERROR_MSG")
-        self.DATE = result.get("DATE")
+        self.DATE = result.get("DATE", datetime.date.today())
 
         # Store PARAMETER metadata
         parameter = response_data.get("PARAMETER", {})
         self.LANG = parameter.get("LANG")
         self.DATA_FORMAT = parameter.get("DATA_FORMAT")
         self.LIMIT = parameter.get("LIMIT")
+        self.UPDATED_DATE = parameter.get("UPDATED_DATE", "")
 
         # Store DATALIST_INF metadata
         datalist_inf = response_data.get("DATALIST_INF", {})
@@ -476,6 +482,8 @@ class MetaInfoReader(_eStatReader):
         「統計表情報取得」で得られる統計表IDです。
     prefix_colname_with_classname: bool, default True
         Whether to prefix column names with class names
+    use_jp_colnames : bool, default True
+        出力データフレームの列名を日本語にするか否か
     has_lv_hierarchy : bool, default False
         Whether to create hierarchy levels
     use_fillna_lv_hierarchy : bool, default False
@@ -508,6 +516,7 @@ class MetaInfoReader(_eStatReader):
         api_key: str,
         statsDataId: Union[str, int],
         prefix_colname_with_classname: bool = True,
+        use_jp_colnames: bool = True,
         has_lv_hierarchy: bool = False,
         level_to: Optional[int] = None,
         use_fillna_lv_hierarchy: bool = True,
@@ -532,6 +541,7 @@ class MetaInfoReader(_eStatReader):
 
         self.statsDataId = statsDataId
         self.prefix_colname_with_classname = prefix_colname_with_classname
+        self.use_jp_colnames = use_jp_colnames
         self.has_lv_hierarchy = has_lv_hierarchy
         self.level_to = level_to
         self.use_fillna_lv_hierarchy = use_fillna_lv_hierarchy
@@ -777,7 +787,7 @@ class MetaInfoReader(_eStatReader):
             # プレフィックスなし、@記号のみ除去
             transformed_df = transformed_df.rename(columns=lambda col: f"{col.lstrip('@')}")
 
-        if self.lang is None or self.lang != "E":
+        if self.use_jp_colnames:
             # Convert column names to Japanese
             transformed_df = colname_to_japanese(transformed_df).rename(columns={"": class_name})
 
@@ -1033,6 +1043,8 @@ class StatsDataReader(_eStatReader):
         Statistics data ID
     prefix_colname_with_classname : bool, default True
         Whether to prefix column names with class names
+    use_jp_colnames : bool, default True
+        出力データフレームの列名を日本語にするか否か
     lang : Optional[str], default None
         Language for retrieved data. Either "J" (Japanese) or "E" (English).
         取得するデータの言語を 以下のいずれかを指定して下さい。
@@ -1084,6 +1096,7 @@ class StatsDataReader(_eStatReader):
         api_key: str,
         statsDataId: Union[str, int],
         prefix_colname_with_classname: bool = True,
+        use_jp_colnames: bool = True,
         lang: Optional[str] = None,
         explanationGetFlg: Optional[str] = None,
         retry_count: int = 3,
@@ -1206,6 +1219,7 @@ class StatsDataReader(_eStatReader):
             raise TypeError("api_key must be a string")
         self.statsDataId = statsDataId
         self.prefix_colname_with_classname = prefix_colname_with_classname
+        self.use_jp_colnames = use_jp_colnames
         
         # Store all filter parameters
         self.filter_params = {
@@ -1300,6 +1314,7 @@ class StatsDataReader(_eStatReader):
             api_key=self.api_key,
             statsDataId=self.statsDataId,
             prefix_colname_with_classname=self.prefix_colname_with_classname,
+            use_jp_colnames=self.use_jp_colnames,
             lang=self.lang,
             explanationGetFlg=self.explanationGetFlg,
             retry_count=self.retry_count,
@@ -1530,7 +1545,6 @@ class StatsDataReader(_eStatReader):
         # Apply naming conventions
         value_df = self._apply_colname_transformations(value_df, response_data)
 
-
         return value_df
 
     def _read_one_data(self, url: str, params: Dict[str, Any]) -> pd.DataFrame:
@@ -1750,6 +1764,8 @@ class StatsDataReader(_eStatReader):
         クラスＩＤ→表示名マップ（CLASS_NAME_MAP）を先に作成し、
         FIELD_MAPPING はそれを使って動的に生成する実装例。
         """
+        self.en_colnames = list(value_df.columns)
+        
         class_objs = (
             out.get("GET_STATS_DATA", {})
             .get("STATISTICAL_DATA", {})
@@ -1757,12 +1773,6 @@ class StatsDataReader(_eStatReader):
             .get("CLASS_OBJ", [])
         )
         if not isinstance(class_objs, list):
-            return value_df
-
-        # 英語モードの場合は変換をスキップ
-        if self.lang == "E":
-            # tab_colname設定のみ
-            self.tab_colname = "tab_name"
             return value_df
     
         # クラスＩＤ→クラス名マップだけを先に作成
@@ -1773,31 +1783,34 @@ class StatsDataReader(_eStatReader):
             if "@id" in co
         }
 
-        # 
         columns_mapping = {}
-        for orig in value_df.columns:
+        for orig in self.en_colnames:
+            print(orig)
             if "_" not in orig:
+                columns_mapping[orig] = orig
                 continue
+            
             prefix, suffix = orig.split("_", 1)
-            # prefix が CLASS_NAME_MAP にある場合だけ変換
             if prefix in self.CLASS_NAME_MAPPING:
                 display = self.CLASS_NAME_MAPPING[prefix]
-                # 'code','name','level','unit' ... などをそのまま suffix として連結
-                columns_mapping[orig] = f"{display}{suffix}"
+                # suffixが'name'の場合は、アンダースコアなしでprefixのみ格納
+                if suffix == "name":
+                    columns_mapping[orig] = display
+                else:
+                    columns_mapping[orig] = f"{display}{suffix}"  # アンダースコアなしで連結
+            else:
+                columns_mapping[orig] = orig
 
-        # tab_colname 設定（既存ロジック）
-        if self.lang == "E":
-            self.tab_colname = "tab_name"
-        else:
-            self.tab_colname = "表章項目"
+        self.EN_JP_MAPPING = dictvalue_to_japanese(columns_mapping)
+        self.jp_colnames = list(self.EN_JP_MAPPING.values())
+        
 
         # リネーム実行
-        if columns_mapping:
-            value_df = value_df.rename(columns=columns_mapping)
-
-        # 日本語化ヘルパー適用（lang!="E" のとき）
-        if self.lang != "E":
-            value_df = colname_to_japanese(value_df)
+        if self.use_jp_colnames:
+            value_df = value_df.rename(columns=self.EN_JP_MAPPING)
+            self.tab_colname = "表章項目"
+        else:
+            self.tab_colname = "tab_name"
 
         return value_df
 
@@ -1830,7 +1843,29 @@ class StatsDataReader(_eStatReader):
         
         return datasets
 
+def dictvalue_to_japanese(trans_dict: dict) -> dict:
+    """
+    辞書の値を日本語に変換する関数
     
+    Parameters
+    ----------
+    trans_dict : dict
+        変換対象の辞書
+        
+    Returns
+    -------
+    dict
+        値が日本語に変換された辞書
+    """    
+    def _convert(value):
+        converted_value = value
+        for eng, jpn in TRANSLATION_MAPPING.items():
+            if eng in converted_value:
+                converted_value = converted_value.replace(eng, jpn)
+        return converted_value
+    
+    return {k: _convert(v) for k, v in trans_dict.items()}
+
 def colname_to_japanese(value: pd.DataFrame) -> pd.DataFrame:
     # 英語と日本語の対応
     def _convert(c):
